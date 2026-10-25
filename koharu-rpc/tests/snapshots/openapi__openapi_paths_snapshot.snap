@@ -34,6 +34,19 @@ expression: paths
         ],
     ),
     (
+        "/characters",
+        [
+            "get",
+            "put",
+        ],
+    ),
+    (
+        "/characters/speakers",
+        [
+            "put",
+        ],
+    ),
+    (
         "/config",
         [
             "get",

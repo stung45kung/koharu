@@ -28,7 +28,8 @@ jobs:
           eval "$(dbus-launch --sh-syntax)"
           echo -n "" | gnome-keyring-daemon --unlock --components=secrets &>/dev/null &
           export $(echo -n "" | gnome-keyring-daemon --start --components=secrets 2>/dev/null)
-          cargo test --workspace --tests > test.txt 2>&1 || true
+          cargo test --workspace --tests --no-fail-fast > test.txt 2>&1 || true
           msg=$(grep -E '^error|^test .*FAILED|panicked at|^failures:|^    [a-z_:]+$|left:|right:|^  --> |^error\[' test.txt | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=tests::${msg:-no test failures}"
+          awk '/^---- .* stdout ----$/{p=1} p{print} /^failures:$/{p=0}' test.txt | head -120 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error title=stdout::/'
           tail -30 test.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error title=tail::/'

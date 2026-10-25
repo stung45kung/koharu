@@ -1,0 +1,34 @@
+# TEMPORARY: surfaces Rust errors as annotations (job logs aren't readable
+# from the authoring sandbox). Remove before merging.
+name: Diag
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          sudo apt update
+          sudo apt install --no-install-recommends libwebkit2gtk-4.1-dev build-essential \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev dbus-x11 gnome-keyring
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy
+        run: |
+          cargo clippy --message-format=short -- -D warnings > clippy.txt 2>&1 || true
+          msg=$(grep -E '(error|warning)' clippy.txt | grep -v '^\s*Compiling\|^\s*Checking' | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=clippy::${msg:-no clippy errors}"
+      - name: tests
+        run: |
+          eval "$(dbus-launch --sh-syntax)"
+          echo -n "" | gnome-keyring-daemon --unlock --components=secrets &>/dev/null &
+          export $(echo -n "" | gnome-keyring-daemon --start --components=secrets 2>/dev/null)
+          cargo test --workspace --tests > test.txt 2>&1 || true
+          msg=$(grep -E '^error|^test .*FAILED|panicked at|^failures:|^    [a-z_:]+$|left:|right:|^  --> |^error\[' test.txt | head -80 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          echo "::error title=tests::${msg:-no test failures}"
+          tail -30 test.txt | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' | sed 's/^/::error title=tail::/'

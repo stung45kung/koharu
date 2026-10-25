@@ -3,6 +3,10 @@
 //!
 //! See [`crate::app::App`] for the entry point.
 
+// `#[async_trait]` expands to `#[must_use]` fns returning a boxed future,
+// which clippy >= 1.99 flags as `double_must_use`.
+#![allow(clippy::double_must_use)]
+
 pub mod ai;
 pub mod app;
 pub mod archive;

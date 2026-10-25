@@ -15,13 +15,13 @@ jobs:
       - run: |
           sudo apt update
           sudo apt install --no-install-recommends libwebkit2gtk-4.1-dev build-essential \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev dbus-x11 gnome-keyring
+            curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev fonts-noto-cjk dbus-x11 gnome-keyring
       - uses: actions/checkout@v6
       - uses: Swatinem/rust-cache@v2
       - name: clippy
         run: |
-          cargo clippy --message-format=short -- -D warnings > clippy.txt 2>&1 || true
-          msg=$(grep -E '(error|warning)' clippy.txt | grep -v '^\s*Compiling\|^\s*Checking' | head -60 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+          cargo clippy --keep-going --message-format=short -- -D warnings > clippy.txt 2>&1 || true
+          msg=$(grep -E '(error|warning)' clippy.txt | grep -v '^\s*Compiling\|^\s*Checking' | head -120 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           echo "::error title=clippy::${msg:-no clippy errors}"
       - name: tests
         run: |

@@ -87,4 +87,40 @@ describe('TextBlocksPanel', () => {
       defaultFont: 'Arial',
     })
   })
+
+  it('shows the assigned speaker on the block header', async () => {
+    server.use(
+      http.get('/api/v1/scene.json', () => HttpResponse.json(sceneWithTextNodes())),
+      http.get('/api/v1/llm/current', () =>
+        HttpResponse.json({ status: 'ready', target: null, error: null }),
+      ),
+      http.get('/api/v1/characters', () =>
+        HttpResponse.json({
+          version: 1,
+          characters: [{ id: 'c1', name: 'Narrator', description: '' }],
+          speakers: { t1: 'c1' },
+        }),
+      ),
+    )
+
+    renderWithQuery(<TextBlocksPanel />)
+
+    const chip = await screen.findByTestId('textblock-speaker-chip-0')
+    expect(chip).toHaveTextContent('Narrator')
+    expect(screen.queryByTestId('textblock-speaker-chip-1')).toBeNull()
+  })
+
+  it('opens the character manager from the panel header', async () => {
+    server.use(
+      http.get('/api/v1/scene.json', () => HttpResponse.json(sceneWithTextNodes())),
+      http.get('/api/v1/llm/current', () =>
+        HttpResponse.json({ status: 'ready', target: null, error: null }),
+      ),
+    )
+
+    renderWithQuery(<TextBlocksPanel />)
+
+    await userEvent.click(await screen.findByTestId('textblocks-characters'))
+    expect(await screen.findByTestId('characters-dialog')).toBeInTheDocument()
+  })
 })

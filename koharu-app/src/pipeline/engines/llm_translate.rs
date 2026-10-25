@@ -5,6 +5,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use koharu_core::{NodeDataPatch, NodeId, NodePatch, Op, PageId, Scene, TextData, TextDataPatch};
+use koharu_llm::Language;
+use koharu_llm::prompt::system_prompt_intro;
 
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
@@ -21,17 +23,32 @@ impl Engine for Model {
         }
 
         let sources: Vec<String> = targets.iter().map(|(_, s)| s.clone()).collect();
+        // Tag `[i + 1]` is `targets[i]`, so the speaker map is built from the
+        // exact nodes being sent (works for single-block and reordered runs).
+        let node_ids: Vec<NodeId> = targets.iter().map(|(id, _)| *id).collect();
+        let speaker_section = ctx.characters.speaker_prompt_section(&node_ids);
+        let system_prompt = effective_system_prompt(
+            ctx.options.system_prompt.as_deref(),
+            ctx.options.target_language.as_deref(),
+            speaker_section.as_deref(),
+        );
         let translations = ctx
             .llm
             .translate_texts(
                 &sources,
                 ctx.options.target_language.as_deref(),
-                ctx.options.system_prompt.as_deref(),
+                system_prompt.as_deref(),
             )
             .await?;
 
         let mut ops = Vec::with_capacity(targets.len());
         for ((node_id, _), translation) in targets.into_iter().zip(translations) {
+            // A block the model skipped comes back empty; keep whatever
+            // translation the block already had instead of wiping it.
+            if translation.trim().is_empty() {
+                tracing::warn!(node = %node_id, "LLM returned no translation for block; keeping existing text");
+                continue;
+            }
             ops.push(Op::UpdateNode {
                 page: ctx.page,
                 id: node_id,
@@ -48,6 +65,32 @@ impl Engine for Model {
         }
         Ok(ops)
     }
+}
+
+/// System prompt to send. Without speaker info this is exactly the user's
+/// custom prompt (or `None` → provider default), i.e. unchanged behaviour.
+/// With speaker info, the section is appended to the custom prompt, or to
+/// the default instructions when no custom prompt is set. Block-tag rules
+/// are appended later by every LLM path, so they are not repeated here.
+fn effective_system_prompt(
+    custom: Option<&str>,
+    target_language: Option<&str>,
+    speaker_section: Option<&str>,
+) -> Option<String> {
+    let custom = custom.filter(|p| !p.trim().is_empty());
+    let Some(section) = speaker_section else {
+        return custom.map(str::to_string);
+    };
+    let base = match custom {
+        Some(p) => p.trim_end().to_string(),
+        None => {
+            let lang = target_language
+                .and_then(Language::parse)
+                .unwrap_or(Language::English);
+            system_prompt_intro(lang)
+        }
+    };
+    Some(format!("{base}\n\n{section}"))
 }
 
 fn collect_translation_targets(ctx: &EngineCtx<'_>) -> Vec<(NodeId, String)> {
@@ -144,6 +187,59 @@ mod tests {
             collect_translation_targets_from(&scene, page_id(), options.text_node_ids.as_deref());
 
         assert_eq!(targets, vec![(second, "second".to_string())]);
+    }
+
+    #[test]
+    fn prompt_is_unchanged_without_speakers() {
+        assert_eq!(effective_system_prompt(None, Some("th-TH"), None), None);
+        assert_eq!(
+            effective_system_prompt(Some("แปลเป็นไทย"), None, None).as_deref(),
+            Some("แปลเป็นไทย")
+        );
+        assert_eq!(effective_system_prompt(Some("   "), None, None), None);
+    }
+
+    #[test]
+    fn speaker_section_is_appended_to_custom_prompt() {
+        let out = effective_system_prompt(Some("แปลเป็นไทย  "), None, Some("SPEAKERS")).unwrap();
+        assert_eq!(out, "แปลเป็นไทย\n\nSPEAKERS");
+    }
+
+    #[test]
+    fn speaker_section_uses_default_intro_without_custom_prompt() {
+        let out = effective_system_prompt(None, Some("en-US"), Some("SPEAKERS")).unwrap();
+        assert!(out.starts_with("You are a professional manga translator."));
+        assert!(out.ends_with("\n\nSPEAKERS"));
+        // Tag rules are appended by the LLM layer; don't duplicate them.
+        assert!(!out.contains("[1], [2]"));
+    }
+
+    #[test]
+    fn speaker_tags_follow_translation_targets() {
+        use koharu_core::{Character, CharacterBook, CharacterId};
+
+        let (a, b, c) = (node_id(1), node_id(2), node_id(3));
+        let scene = scene_with_texts(vec![
+            text_node(a, Some("我が家の近くで")),
+            text_node(b, Some("")),
+            text_node(c, Some("こんな僻地で")),
+        ]);
+        let mut book = CharacterBook::default();
+        let hood = CharacterId(Uuid::from_u128(500));
+        book.set_characters(vec![Character {
+            id: hood,
+            name: "Hood".into(),
+            description: "archaic".into(),
+        }]);
+        book.assign(&[c], Some(hood)).unwrap();
+
+        // Block b has no OCR text, so c is sent as tag [2].
+        let targets = collect_translation_targets_from(&scene, page_id(), None);
+        let ids: Vec<NodeId> = targets.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, vec![a, c]);
+        let section = book.speaker_prompt_section(&ids).unwrap();
+        assert!(section.contains("[1] unknown speaker"));
+        assert!(section.contains("[2] S1"));
     }
 
     #[test]

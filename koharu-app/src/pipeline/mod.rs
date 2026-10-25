@@ -201,6 +201,7 @@ pub async fn run(
                 }
             };
             let scene_snap = session.scene_snapshot();
+            let characters = session.characters();
             let ctx = EngineCtx {
                 scene: &scene_snap,
                 page: *page_id,
@@ -210,6 +211,7 @@ pub async fn run(
                 options: &spec.options,
                 llm: &llm,
                 renderer: &renderer,
+                characters: &characters,
             };
             let step_result = async { engine.run(ctx).await }
                 .instrument(tracing::info_span!("step", engine = info.id, page = %page_id))

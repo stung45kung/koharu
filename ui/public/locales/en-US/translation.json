@@ -458,5 +458,21 @@
     },
     "close": "Close",
     "retry": "Retry"
+  },
+  "characters": {
+    "manage": "Characters",
+    "title": "Characters",
+    "description": "Give each character a name and describe how they talk (self-reference, how they address others, sentence endings, tone). The profile of a block's speaker is added to the translation prompt; it only steers wording and never adds meaning.",
+    "empty": "No characters yet. Add one, then pick it as the speaker of a text block.",
+    "add": "Add character",
+    "delete": "Delete character",
+    "save": "Save",
+    "cancel": "Cancel",
+    "namePlaceholder": "Name (e.g. Narrator)",
+    "descriptionPlaceholder": "How this character speaks…",
+    "nameRequired": "Every character needs a name.",
+    "usedBy": "{{count}} blocks",
+    "speakerLabel": "Speaker",
+    "unknownSpeaker": "Unknown speaker"
   }
 }

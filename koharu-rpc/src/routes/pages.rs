@@ -550,6 +550,7 @@ async fn put_mask(
             region: Some(region),
             ..Default::default()
         };
+        let characters = session.characters();
         let ctx = EngineCtx {
             scene: &scene,
             page: page_id,
@@ -559,6 +560,7 @@ async fn put_mask(
             options: &options,
             llm: &app.llm,
             renderer: &app.renderer,
+            characters: &characters,
         };
 
         // 3. Run Engine (Synchronously for this request)

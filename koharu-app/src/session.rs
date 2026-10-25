@@ -10,6 +10,7 @@
 //!   `.khrproj/project.toml`    — TOML-encoded `ProjectMeta`
 //!   `.khrproj/scene.bin`       — postcard-encoded `Snapshot { epoch, scene }`
 //!   `.khrproj/history.log`     — append-only `LogFrame { epoch, op }`
+//!   `.khrproj/characters.toml` — character profiles + speaker map (optional)
 //!   `.khrproj/blobs/ab/cdef…`  — content-addressed blobs
 //!   `.khrproj/.lock`           — fs4 exclusive lock (session lifetime)
 
@@ -22,11 +23,12 @@ use atomicwrites::{AtomicFile, OverwriteBehavior};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::Utc;
 use fs4::FileExt;
-use koharu_core::{Scene, op::Op};
+use koharu_core::{CharacterBook, Scene, op::Op};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::blobs::BlobStore;
+use crate::characters;
 use crate::history::{self, History};
 
 const SCENE_FILE: &str = "scene.bin";
@@ -49,6 +51,8 @@ pub struct ProjectSession {
     pub scene: RwLock<Scene>,
     pub history: Mutex<History>,
     pub blobs: Arc<BlobStore>,
+    /// Character profiles + text-node speakers, mirrored to `characters.toml`.
+    characters: RwLock<CharacterBook>,
     /// Held for the lifetime of the session.
     _lock: File,
 }
@@ -111,12 +115,14 @@ impl ProjectSession {
             .with_context(|| format!("replay log {}", log_path))?;
 
         let history_obj = History::open(log_path.as_std_path(), epoch)?;
+        let characters = RwLock::new(characters::load(&dir));
 
         Ok(Arc::new(Self {
             dir,
             scene: RwLock::new(scene),
             history: Mutex::new(history_obj),
             blobs,
+            characters,
             _lock: lock,
         }))
     }
@@ -149,6 +155,27 @@ impl ProjectSession {
     /// Cheap clone of the scene for read-only consumers (pipeline engines).
     pub fn scene_snapshot(&self) -> Scene {
         self.scene.read().clone()
+    }
+
+    // --- characters ---------------------------------------------------------
+
+    /// Current character book (cheap clone; small).
+    pub fn characters(&self) -> CharacterBook {
+        self.characters.read().clone()
+    }
+
+    /// Mutate the character book and persist it. The in-memory copy only
+    /// changes if both `f` and the disk write succeed.
+    pub fn update_characters<R>(
+        &self,
+        f: impl FnOnce(&mut CharacterBook) -> Result<R>,
+    ) -> Result<(R, CharacterBook)> {
+        let mut guard = self.characters.write();
+        let mut next = guard.clone();
+        let out = f(&mut next)?;
+        characters::save(&self.dir, &next)?;
+        *guard = next.clone();
+        Ok((out, next))
     }
 
     // --- compaction --------------------------------------------------------
@@ -320,6 +347,47 @@ mod tests {
             .expect("effect");
         assert!(effect.italic);
         assert!(effect.bold);
+    }
+
+    #[test]
+    fn characters_persist_across_reopen() {
+        use koharu_core::{Character, CharacterId};
+
+        let (_tmp, path) = tmp_dir();
+        let node = NodeId::new();
+        let id = CharacterId::new();
+        {
+            let session = ProjectSession::create(&path, "chars").unwrap();
+            assert!(session.characters().is_empty());
+            session
+                .update_characters(|book| {
+                    book.set_characters(vec![Character {
+                        id,
+                        name: "ผู้บรรยาย".into(),
+                        description: String::new(),
+                    }]);
+                    book.assign(&[node], Some(id))?;
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let session = ProjectSession::open(&path).unwrap();
+        let book = session.characters();
+        assert_eq!(book.speaker_of(node).map(|c| c.id), Some(id));
+    }
+
+    #[test]
+    fn failed_character_update_leaves_book_unchanged() {
+        let (_tmp, path) = tmp_dir();
+        let session = ProjectSession::create(&path, "chars").unwrap();
+        let bogus = koharu_core::CharacterId::new();
+        let err = session.update_characters(|book| {
+            book.assign(&[NodeId::new()], Some(bogus))?;
+            Ok(())
+        });
+        assert!(err.is_err());
+        assert!(session.characters().is_empty());
+        assert!(!path.join(characters::CHARACTERS_FILE).exists());
     }
 
     #[test]

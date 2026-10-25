@@ -1,10 +1,11 @@
 'use client'
 
-import { Languages, LoaderCircleIcon, Trash2Icon } from 'lucide-react'
+import { Languages, LoaderCircleIcon, Trash2Icon, UsersIcon } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CharacterManagerDialog } from '@/components/CharacterManagerDialog'
 import {
   Accordion,
   AccordionContent,
@@ -26,6 +27,13 @@ import { useCurrentPage, useTextNodes, type TextNodeEntry } from '@/hooks/useCur
 import { getConfig, startPipeline, useGetCurrentLlm } from '@/lib/api/default/default'
 import { fetchApi } from '@/lib/api/fetch'
 import type { TextDataPatch } from '@/lib/api/schemas'
+import {
+  speakerOf,
+  useAssignSpeaker,
+  useCharacters,
+  type Character,
+  type CharacterBook,
+} from '@/lib/characters'
 import { applyOp, invalidateScene, queueAutoRender, reorderPageTextNodes } from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
@@ -55,6 +63,9 @@ export function TextBlocksPanel() {
   )
   const readingOrder = useEditorUiStore((s) => s.readingOrder)
   const setReadingOrder = useEditorUiStore((s) => s.setReadingOrder)
+  const characterBook = useCharacters()
+  const assignSpeaker = useAssignSpeaker()
+  const [charactersOpen, setCharactersOpen] = useState(false)
 
   if (!page) {
     return (
@@ -85,6 +96,17 @@ export function TextBlocksPanel() {
     queueAutoRender(page.id)
   }
 
+  const setSpeaker = async (nodeId: string, characterId: string | null) => {
+    try {
+      // Applies to every selected block when the edited one is part of a
+      // multi-selection (shift/ctrl-click), otherwise just this block.
+      const nodeIds = selectedIds.has(nodeId) ? Array.from(selectedIds) : [nodeId]
+      await assignSpeaker.mutateAsync({ nodeIds, characterId })
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
   const generate = async (nodeId: string) => {
     if (!page) return
     const cfg = await getConfig()
@@ -107,9 +129,28 @@ export function TextBlocksPanel() {
   return (
     <div className='flex min-h-0 flex-1 flex-col' data-testid='panels-textblocks'>
       <div className='flex items-center justify-between border-b border-border px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
-        <span data-testid='textblocks-count' data-count={textNodes.length}>
-          {t('textBlocks.title', { count: textNodes.length })}
-        </span>
+        <div className='flex items-center gap-1'>
+          <span data-testid='textblocks-count' data-count={textNodes.length}>
+            {t('textBlocks.title', { count: textNodes.length })}
+          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                data-testid='textblocks-characters'
+                aria-label={t('characters.manage')}
+                variant='ghost'
+                size='icon-xs'
+                onClick={() => setCharactersOpen(true)}
+                className='size-5'
+              >
+                <UsersIcon className='size-3' />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side='bottom' sideOffset={4}>
+              {t('characters.manage')}
+            </TooltipContent>
+          </Tooltip>
+        </div>
         <div className='flex items-center gap-1.5'>
           <span className='font-normal uppercase opacity-50'>{t('textBlocks.readingOrder')}:</span>
           <Select
@@ -193,15 +234,20 @@ export function TextBlocksPanel() {
                   onGenerate={() => void generate(node.id)}
                   processing={isProcessing}
                   llmReady={llmReady}
+                  characterBook={characterBook}
+                  onSpeakerChange={(characterId) => void setSpeaker(node.id, characterId)}
                 />
               ))}
             </Accordion>
           )}
         </div>
       </ScrollArea>
+      <CharacterManagerDialog open={charactersOpen} onOpenChange={setCharactersOpen} />
     </div>
   )
 }
+
+const UNKNOWN_SPEAKER = '__unknown__'
 
 type BlockCardProps = {
   node: TextNodeEntry
@@ -213,6 +259,8 @@ type BlockCardProps = {
   onGenerate: () => void
   processing: boolean
   llmReady: boolean
+  characterBook: CharacterBook
+  onSpeakerChange: (characterId: string | null) => void
 }
 
 function BlockCard({
@@ -225,12 +273,15 @@ function BlockCard({
   onGenerate,
   processing,
   llmReady,
+  characterBook,
+  onSpeakerChange,
 }: BlockCardProps) {
   const { t } = useTranslation()
   const data = node.data
   const hasOcr = !!data.text?.trim()
   const hasTranslation = !!data.translation?.trim()
   const preview = data.translation?.trim() || data.text?.trim()
+  const speaker: Character | null = speakerOf(characterBook, node.id)
 
   return (
     <motion.div
@@ -277,6 +328,15 @@ function BlockCard({
             >
               {t('textBlocks.translationBadge')}
             </span>
+            {speaker && (
+              <span
+                data-testid={`textblock-speaker-chip-${index}`}
+                className='max-w-20 shrink-0 truncate rounded-sm bg-sky-500/70 px-1 py-0.5 text-[9px] font-medium text-white'
+                title={speaker.name}
+              >
+                {speaker.name}
+              </span>
+            )}
             {preview && (
               <p className='line-clamp-1 min-w-0 flex-1 text-xs text-muted-foreground'>{preview}</p>
             )}
@@ -353,6 +413,35 @@ function BlockCard({
                 onValueChange={(value) => onPatch({ translation: value })}
                 className='min-h-0 resize-none px-1.5 py-1 text-xs'
               />
+            </div>
+            <div className='flex flex-col gap-0.5'>
+              <span className='text-[10px] text-muted-foreground uppercase'>
+                {t('characters.speakerLabel')}
+              </span>
+              <Select
+                value={speaker?.id ?? UNKNOWN_SPEAKER}
+                onValueChange={(value) =>
+                  onSpeakerChange(value === UNKNOWN_SPEAKER ? null : value)
+                }
+              >
+                <SelectTrigger
+                  data-testid={`textblock-speaker-${index}`}
+                  aria-label={t('characters.speakerLabel')}
+                  className='h-7 w-full px-1.5 text-xs'
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNKNOWN_SPEAKER} className='text-xs text-muted-foreground'>
+                    {t('characters.unknownSpeaker')}
+                  </SelectItem>
+                  {characterBook.characters.map((c) => (
+                    <SelectItem key={c.id} value={c.id} className='text-xs'>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </AccordionContent>

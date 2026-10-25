@@ -8,6 +8,7 @@
 //! - `style`, `font`, `google_fonts` — text styling + font-prediction types.
 
 pub mod blob;
+pub mod characters;
 pub mod events;
 pub mod font;
 pub mod google_fonts;
@@ -17,6 +18,7 @@ pub mod scene;
 pub mod style;
 
 pub use blob::BlobRef;
+pub use characters::{Character, CharacterBook, CharacterId};
 pub use events::{
     AppEvent, DownloadProgress, DownloadStatus, JobFinishedEvent, JobStatus, JobSummary,
     JobWarningEvent, PipelineProgress, PipelineStatus, PipelineStep, ProjectSummary, SnapshotEvent,

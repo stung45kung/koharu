@@ -563,6 +563,7 @@ async fn put_mask(
             renderer: &app.renderer,
             characters: &characters,
             typesetting: &typesetting,
+            session: &session,
         };
 
         // 3. Run Engine (Synchronously for this request)

@@ -62,6 +62,9 @@ type MenuSection = {
   triggerTestId?: string
 }
 
+/** Engine id of the LLM speaker-guessing step (koharu-app `speaker-guess`). */
+const SPEAKER_GUESS_STEP = 'speaker-guess'
+
 export function MenuBar() {
   const { t } = useTranslation()
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -93,6 +96,8 @@ export function MenuBar() {
       p.bubble_segmenter,
       p.font_detector,
       p.ocr,
+      // Skips itself when the project has no characters or no LLM is loaded.
+      SPEAKER_GUESS_STEP,
       p.translator,
       p.inpainter,
       p.renderer,
@@ -125,6 +130,7 @@ export function MenuBar() {
         ? [p.detector, p.segmenter, p.bubble_segmenter, p.font_detector]
         : []),
       prefs.customPipeline.ocr ? p.ocr : null,
+      prefs.customPipeline.speakers !== false ? SPEAKER_GUESS_STEP : null,
       prefs.customPipeline.translator ? p.translator : null,
       prefs.customPipeline.inpainter ? p.inpainter : null,
       prefs.customPipeline.renderer ? p.renderer : null,
@@ -370,6 +376,15 @@ export function MenuBar() {
                   onSelect={(e) => e.preventDefault()}
                 >
                   {t('processing.ocr')}
+                </MenubarCheckboxItem>
+                <MenubarCheckboxItem
+                  className='text-[13px]'
+                  data-testid='menu-custom-pipeline-speakers'
+                  checked={customPipeline.speakers !== false}
+                  onCheckedChange={(checked) => setCustomPipeline({ speakers: checked })}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {t('characters.guessShort')}
                 </MenubarCheckboxItem>
                 <MenubarCheckboxItem
                   className='text-[13px]'

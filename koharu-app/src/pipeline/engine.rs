@@ -53,6 +53,9 @@ pub struct EngineCtx<'a> {
     pub characters: &'a CharacterBook,
     /// Project default text size (may be unset).
     pub typesetting: &'a TypesettingDefaults,
+    /// The open project, for engines that keep state outside the scene
+    /// (e.g. `speaker-guess` writing the character book).
+    pub session: &'a crate::session::ProjectSession,
 }
 
 /// Options threaded through a pipeline run.

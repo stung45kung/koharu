@@ -125,7 +125,9 @@ inventory::submit! {
     EngineInfo {
         id: "llm",
         name: "LLM",
-        needs: &[Artifact::OcrText],
+        // `Speakers` only orders `speaker-guess` (when selected) before
+        // translation so the guessed speakers reach the prompt.
+        needs: &[Artifact::OcrText, Artifact::Speakers],
         produces: &[Artifact::Translations],
         load: |_runtime, _cpu| Box::pin(async move {
             Ok(Box::new(Model) as Box<dyn Engine>)

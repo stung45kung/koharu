@@ -1,6 +1,9 @@
 use anyhow::Result;
 use harfrust::{Direction, Feature, Script, ShapeOptions, ShaperData, Tag, UnicodeBuffer};
-use icu_properties::{CodePointMapData, props::Script as IcuScript};
+use icu_properties::{
+    CodePointMapData,
+    props::{GeneralCategory, Script as IcuScript},
+};
 use skrifa::raw::TableProvider;
 
 use crate::font::Font;
@@ -117,6 +120,69 @@ impl TextShaper {
     }
 }
 
+/// Length (in chars) of each cluster: a base char plus following marks.
+fn cluster_lengths(chars: &[char]) -> Vec<usize> {
+    let categories = CodePointMapData::<GeneralCategory>::new();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < chars.len() {
+        let mut end = i + 1;
+        while end < chars.len() && is_mark(categories.get(chars[end])) {
+            end += 1;
+        }
+        out.push(end - i);
+        i = end;
+    }
+    out
+}
+
+fn is_mark(category: GeneralCategory) -> bool {
+    matches!(
+        category,
+        GeneralCategory::NonspacingMark
+            | GeneralCategory::SpacingMark
+            | GeneralCategory::EnclosingMark
+    )
+}
+
+/// Font index for every char of `text`, chosen per cluster (a base char plus
+/// the combining marks after it) rather than per char.
+///
+/// Choosing per char let a Thai vowel or tone mark (e.g. U+0E4B in เดี๋ยว)
+/// land in a different fallback font than its consonant; it was then shaped
+/// in a separate run, could not attach to its base, and was drawn floating
+/// away from it. Now the whole cluster uses the first font (primary, then
+/// the last used, then the rest in order) that covers every char in it,
+/// falling back to the base char's font when no font covers them all.
+fn assign_cluster_fonts(text: &str, fonts: &[&Font]) -> Vec<usize> {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = Vec::with_capacity(chars.len());
+    let mut last_idx = 0;
+    let mut i = 0;
+    for len in cluster_lengths(&chars) {
+        let cluster = &chars[i..i + len];
+        let covers = |idx: usize| cluster.iter().all(|c| fonts[idx].has_glyph(*c));
+        let idx = if covers(0) {
+            0
+        } else if last_idx != 0 && covers(last_idx) {
+            last_idx
+        } else if let Some(idx) = (0..fonts.len()).find(|&idx| covers(idx)) {
+            idx
+        } else {
+            let base = cluster[0];
+            if fonts[0].has_glyph(base) {
+                0
+            } else {
+                fonts.iter().position(|f| f.has_glyph(base)).unwrap_or(0)
+            }
+        };
+        last_idx = idx;
+        out.extend(std::iter::repeat_n(idx, len));
+        i += len;
+    }
+    out
+}
+
 #[tracing::instrument(level = "debug", skip_all)]
 pub(crate) fn shape_script_runs<'a>(
     shaper: &TextShaper,
@@ -155,21 +221,7 @@ pub(crate) fn shape_script_runs<'a>(
 
         let script_run_text = &text[start..end];
 
-        // Identify priority font for each character in the script run.
-        // We use a small optimization to check the primary font and recently used font first.
-        let mut char_fonts = Vec::with_capacity(script_run_text.len());
-        let mut last_idx = 0;
-        for (_, ch) in script_run_text.char_indices() {
-            let idx = if fonts[0].has_glyph(ch) {
-                0
-            } else if last_idx != 0 && fonts[last_idx].has_glyph(ch) {
-                last_idx
-            } else {
-                fonts.iter().position(|f| f.has_glyph(ch)).unwrap_or(0)
-            };
-            last_idx = idx;
-            char_fonts.push(idx);
-        }
+        let char_fonts = assign_cluster_fonts(script_run_text, fonts);
 
         // Group characters into runs using the pre-calculated font indices.
         let mut font_item_iter = script_run_text.char_indices().enumerate().peekable();
@@ -270,6 +322,18 @@ mod tests {
             .map(|face| face.post_script_name)
             .filter(|post_script_name| !post_script_name.is_empty())?;
         book.query(&post_script_name).ok()
+    }
+
+    #[test]
+    fn thai_marks_stay_in_their_consonant_cluster() {
+        // เดี๋ยว = เ | ด+ี+๋ | ย | ว ; ก็นั่น = ก+็ | น+ั+่ | น
+        let chars: Vec<char> = "เดี๋ยว".chars().collect();
+        assert_eq!(cluster_lengths(&chars), vec![1, 3, 1, 1]);
+        let chars: Vec<char> = "ก็นั่น".chars().collect();
+        assert_eq!(cluster_lengths(&chars), vec![2, 3, 1]);
+        // Leading marks without a base still form their own cluster.
+        let chars: Vec<char> = "\u{0E48}a".chars().collect();
+        assert_eq!(cluster_lengths(&chars), vec![1, 1]);
     }
 
     #[test]

@@ -48,6 +48,12 @@ pub struct RenderBlockInput {
     pub source_direction: Option<TextDirection>,
     pub rendered_direction: Option<TextDirection>,
     pub lock_layout_box: bool,
+    /// Font of the block's speaker (character profile), used when the block
+    /// has no font of its own. Wins over the document font.
+    pub speaker_font: Option<String>,
+    /// Colour of the block's speaker, used when the block has no style of
+    /// its own. Wins over the project default colour.
+    pub speaker_color: Option<[u8; 4]>,
 }
 
 /// Document-level render options (shared across all blocks).
@@ -254,7 +260,11 @@ impl Renderer {
             text_align: None,
         });
         if style.font_families.is_empty()
-            && let Some(font) = document_font
+            && let Some(font) = block
+                .speaker_font
+                .as_deref()
+                .filter(|f| !f.trim().is_empty())
+                .or(document_font)
         {
             style.font_families.push(font.to_string());
         }
@@ -266,7 +276,7 @@ impl Renderer {
             block.style.as_ref(),
             &style,
             block.font_prediction.as_ref(),
-            default_color,
+            block.speaker_color.or(default_color),
         );
 
         let writing_mode = writing_mode_for_block(&layout_source);
@@ -1388,6 +1398,8 @@ mod tests {
             source_direction: None,
             rendered_direction: None,
             lock_layout_box: false,
+            speaker_font: None,
+            speaker_color: None,
         }
     }
 

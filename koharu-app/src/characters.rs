@@ -83,6 +83,7 @@ mod tests {
             id,
             name: "อากาซูกิน".into(),
             description: "ใช้ ข้า/เจ้า\nลงท้าย ...เถิด".into(),
+            ..Default::default()
         }]);
         let node = NodeId(Uuid::from_u128(42));
         book.assign(&[node], Some(id)).unwrap();

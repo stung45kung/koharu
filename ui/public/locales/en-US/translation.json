@@ -488,7 +488,15 @@
     "guessShort": "Guess speakers",
     "confirmShort": "Confirm ({{count}})",
     "guessNeedsLlm": "Load an LLM first to guess speakers.",
-    "guessNeedsText": "Run Detect and OCR first to guess speakers."
+    "guessNeedsText": "Run Detect and OCR first to guess speakers.",
+    "font": "Font",
+    "color": "Color",
+    "fontPlaceholder": "not set (project / app default)",
+    "styleNotSet": "not set (project default)",
+    "clearFont": "Clear font",
+    "clearColor": "Clear color",
+    "copyStyle": "Use selected block's font & color",
+    "styleHint": "Used for this character's blocks that have no font or color of their own. Re-render to apply."
   },
   "typesetting": {
     "title": "Project defaults",

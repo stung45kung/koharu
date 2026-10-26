@@ -49,7 +49,7 @@ impl std::fmt::Display for CharacterId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Character {
     pub id: CharacterId,
@@ -57,6 +57,14 @@ pub struct Character {
     /// Free-form speech-style notes (pronouns, register, verbal tics, ...).
     #[serde(default)]
     pub description: String,
+    /// Font for this character's blocks (PostScript name or Google
+    /// `Family:Weight` query), used when the block has no font of its own.
+    #[serde(default)]
+    pub font: Option<String>,
+    /// Text colour (RGBA) for this character's blocks, used when the block
+    /// has no style of its own.
+    #[serde(default)]
+    pub color: Option<[u8; 4]>,
 }
 
 pub const CHARACTER_BOOK_VERSION: u32 = 1;
@@ -399,6 +407,7 @@ mod tests {
             id: CharacterId(Uuid::from_u128(1000 + n)),
             name: name.to_string(),
             description: desc.to_string(),
+            ..Default::default()
         }
     }
 

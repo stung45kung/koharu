@@ -225,6 +225,7 @@ mod tests {
             id: CharacterId(Uuid::from_u128(n)),
             name: name.to_string(),
             description: "  speaks politely  ".to_string(),
+            ..Default::default()
         }
     }
 

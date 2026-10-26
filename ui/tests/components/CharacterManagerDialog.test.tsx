@@ -97,4 +97,41 @@ describe('CharacterManagerDialog', () => {
     expect(await screen.findByText('characters.nameRequired')).toBeInTheDocument()
     expect(puts).toHaveLength(0)
   })
+
+  it('copies font and colour from the selected block and saves them', async () => {
+    const puts: Array<{ characters: unknown[] }> = []
+    server.use(
+      http.put('/api/v1/characters', async ({ request }) => {
+        const body = (await request.json()) as { characters: unknown[] }
+        puts.push(body)
+        return HttpResponse.json({ ...book, characters: body.characters })
+      }),
+    )
+    renderWithQuery(
+      <CharacterManagerDialog
+        open
+        onOpenChange={() => {}}
+        selectedStyle={{ font: 'NotoSansThai-ExtraBold', color: [255, 255, 255, 255] }}
+      />,
+    )
+    await waitFor(() => expect(screen.getByTestId('character-name')).toHaveValue('Hood'))
+
+    await userEvent.click(screen.getByTestId('character-copy-style'))
+    expect(screen.getByTestId('character-font')).toHaveValue('NotoSansThai-ExtraBold')
+    expect(screen.getByTestId('character-color-value')).toHaveTextContent('#ffffff')
+
+    await userEvent.click(screen.getByTestId('character-save'))
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0].characters[0]).toMatchObject({
+      id: 'c1',
+      font: 'NotoSansThai-ExtraBold',
+      color: [255, 255, 255, 255],
+    })
+  })
+
+  it('disables copying without a selected block', async () => {
+    renderWithQuery(<CharacterManagerDialog open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByTestId('character-name')).toHaveValue('Hood'))
+    expect(screen.getByTestId('character-copy-style')).toBeDisabled()
+  })
 })

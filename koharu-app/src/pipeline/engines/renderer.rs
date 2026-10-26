@@ -56,6 +56,7 @@ impl Engine for Model {
                 if translation.is_empty() {
                     return None;
                 }
+                let speaker = ctx.characters.speaker_of(*id);
                 Some(RenderBlockInput {
                     node_id: *id,
                     transform: **transform,
@@ -65,6 +66,8 @@ impl Engine for Model {
                     source_direction: t.source_direction,
                     rendered_direction: t.rendered_direction,
                     lock_layout_box: t.lock_layout_box,
+                    speaker_font: speaker.and_then(|c| c.font.clone()),
+                    speaker_color: speaker.and_then(|c| c.color),
                 })
             })
             .collect();

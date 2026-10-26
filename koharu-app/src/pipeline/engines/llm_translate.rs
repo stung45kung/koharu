@@ -324,6 +324,7 @@ mod tests {
             id: sui,
             name: "Sui".into(),
             description: String::new(),
+            ..Default::default()
         }]);
         book.assign(&[a], Some(sui)).unwrap();
 
@@ -361,6 +362,7 @@ mod tests {
             id: hood,
             name: "Hood".into(),
             description: "archaic".into(),
+            ..Default::default()
         }]);
         book.assign(&[c], Some(hood)).unwrap();
 

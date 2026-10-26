@@ -405,6 +405,7 @@ mod tests {
                         id,
                         name: "ผู้บรรยาย".into(),
                         description: String::new(),
+                        ..Default::default()
                     }]);
                     book.assign(&[node], Some(id))?;
                     Ok(())

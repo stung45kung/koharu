@@ -1,13 +1,15 @@
 'use client'
 
-import { Loader2Icon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { CopyIcon, Loader2Icon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { ColorPicker } from '@/components/ui/color-picker'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { useListFonts } from '@/lib/api/default/default'
 import {
   EMPTY_CHARACTER_BOOK,
   newCharacterId,
@@ -22,6 +24,21 @@ const MAX_DESCRIPTION = 4000
 type CharacterManagerDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /** Style of the currently selected text block, for "copy from block". */
+  selectedStyle?: { font?: string | null; color?: number[] | null }
+}
+
+const rgbaToHex = (c: number[]) =>
+  '#' +
+  c
+    .slice(0, 3)
+    .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+    .join('')
+
+const hexToRgba = (hex: string): number[] => {
+  const h = hex.replace('#', '')
+  const full = h.length === 3 ? h.replace(/./g, (x) => x + x) : h.padEnd(6, '0')
+  return [0, 2, 4].map((i) => Number.parseInt(full.slice(i, i + 2), 16) || 0).concat(255)
 }
 
 /**
@@ -34,11 +51,16 @@ type CharacterManagerDialogProps = {
  * Changes are kept in a local draft and written on Save; deleting a
  * character that is in use turns its blocks back into "unknown speaker".
  */
-export function CharacterManagerDialog({ open, onOpenChange }: CharacterManagerDialogProps) {
+export function CharacterManagerDialog({
+  open,
+  onOpenChange,
+  selectedStyle,
+}: CharacterManagerDialogProps) {
   const { t } = useTranslation()
   const query = useCharactersQuery()
   const book = query.data ?? EMPTY_CHARACTER_BOOK
   const save = useSaveCharacters()
+  const { data: fonts = [] } = useListFonts()
   const [draft, setDraft] = useState<Character[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initialized, setInitialized] = useState(false)
@@ -186,6 +208,84 @@ export function CharacterManagerDialog({ open, onOpenChange }: CharacterManagerD
                   >
                     <Trash2Icon className='size-4' />
                   </Button>
+                </div>
+                <div
+                  className='grid shrink-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1.5 text-xs'
+                  data-testid='character-style'
+                >
+                  <span className='text-muted-foreground'>{t('characters.font')}</span>
+                  <Input
+                    data-testid='character-font'
+                    list='character-font-options'
+                    value={selected.font ?? ''}
+                    placeholder={t('characters.fontPlaceholder')}
+                    onChange={(e) => update(selected.id, { font: e.target.value || null })}
+                    className='h-7 text-xs'
+                  />
+                  <datalist id='character-font-options'>
+                    {fonts.map((f) => (
+                      <option key={f.postScriptName} value={f.postScriptName}>
+                        {f.familyName}
+                      </option>
+                    ))}
+                  </datalist>
+                  {selected.font ? (
+                    <Button
+                      aria-label={t('characters.clearFont')}
+                      variant='ghost'
+                      size='icon-xs'
+                      onClick={() => update(selected.id, { font: null })}
+                    >
+                      <XIcon className='size-3' />
+                    </Button>
+                  ) : (
+                    <span className='w-6' />
+                  )}
+                  <span className='text-muted-foreground'>{t('characters.color')}</span>
+                  <div className='flex items-center gap-2'>
+                    <ColorPicker
+                      value={selected.color ? rgbaToHex(selected.color) : '#000000'}
+                      onChange={(hex) => update(selected.id, { color: hexToRgba(hex) })}
+                      triggerTestId='character-color'
+                      className='size-7'
+                    />
+                    <span className='text-muted-foreground' data-testid='character-color-value'>
+                      {selected.color ? rgbaToHex(selected.color) : t('characters.styleNotSet')}
+                    </span>
+                  </div>
+                  {selected.color ? (
+                    <Button
+                      aria-label={t('characters.clearColor')}
+                      variant='ghost'
+                      size='icon-xs'
+                      onClick={() => update(selected.id, { color: null })}
+                    >
+                      <XIcon className='size-3' />
+                    </Button>
+                  ) : (
+                    <span className='w-6' />
+                  )}
+                </div>
+                <div className='flex shrink-0 items-center gap-2'>
+                  <Button
+                    variant='outline'
+                    size='xs'
+                    className='text-[11px]'
+                    data-testid='character-copy-style'
+                    disabled={!selectedStyle || (!selectedStyle.font && !selectedStyle.color)}
+                    onClick={() =>
+                      update(selected.id, {
+                        font: selectedStyle?.font ?? selected.font ?? null,
+                        color: selectedStyle?.color ?? selected.color ?? null,
+                      })
+                    }
+                  >
+                    <CopyIcon className='size-3' />
+                    {t('characters.copyStyle')}
+                  </Button>
+                  <span className='text-[10px] text-muted-foreground'>
+                    {t('characters.styleHint')}
+                  </span>
                 </div>
                 {usage[selected.id] ? (
                   <p className='shrink-0 text-[10px] text-muted-foreground'>

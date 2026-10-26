@@ -185,11 +185,13 @@ mod tests {
                 id: CharacterId(Uuid::from_u128(101)),
                 name: "Captain".into(),
                 description: "gruff, short sentences".into(),
+                ..Default::default()
             },
             Character {
                 id: CharacterId(Uuid::from_u128(102)),
                 name: "Narrator".into(),
                 description: String::new(),
+                ..Default::default()
             },
         ]);
         book

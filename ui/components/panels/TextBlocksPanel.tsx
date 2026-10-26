@@ -335,7 +335,18 @@ export function TextBlocksPanel() {
           )}
         </div>
       </ScrollArea>
-      <CharacterManagerDialog open={charactersOpen} onOpenChange={setCharactersOpen} />
+      <CharacterManagerDialog
+        open={charactersOpen}
+        onOpenChange={setCharactersOpen}
+        selectedStyle={
+          selectedIndex >= 0
+            ? {
+                font: textNodes[selectedIndex].data.style?.fontFamilies?.[0] ?? null,
+                color: textNodes[selectedIndex].data.style?.color ?? null,
+              }
+            : undefined
+        }
+      />
       <GlossaryDialog open={glossaryOpen} onOpenChange={setGlossaryOpen} />
     </div>
   )

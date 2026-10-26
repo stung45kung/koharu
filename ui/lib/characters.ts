@@ -13,6 +13,10 @@ export type Character = {
   id: string
   name: string
   description: string
+  /** Font for this character's blocks (PostScript name / Google `Family:Weight`). */
+  font?: string | null
+  /** RGBA text colour for this character's blocks. */
+  color?: number[] | null
 }
 
 export type CharacterBook = {

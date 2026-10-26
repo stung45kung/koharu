@@ -4,7 +4,9 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use koharu_core::{NodeDataPatch, NodeId, NodePatch, Op, PageId, Scene, TextData, TextDataPatch};
+use koharu_core::{
+    CharacterBook, NodeDataPatch, NodeId, NodePatch, Op, PageId, Scene, TextData, TextDataPatch,
+};
 use koharu_llm::Language;
 use koharu_llm::prompt::system_prompt_intro;
 
@@ -26,11 +28,17 @@ impl Engine for Model {
         // Tag `[i + 1]` is `targets[i]`, so the speaker map is built from the
         // exact nodes being sent (works for single-block and reordered runs).
         let node_ids: Vec<NodeId> = targets.iter().map(|(id, _)| *id).collect();
-        let speaker_section = ctx.characters.speaker_prompt_section(&node_ids);
+        let sections: Vec<String> = [
+            ctx.characters.speaker_prompt_section(&node_ids),
+            previous_page_context(ctx.scene, ctx.page, ctx.characters),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
         let system_prompt = effective_system_prompt(
             ctx.options.system_prompt.as_deref(),
             ctx.options.target_language.as_deref(),
-            speaker_section.as_deref(),
+            &sections,
         );
         let translations = ctx
             .llm
@@ -67,20 +75,22 @@ impl Engine for Model {
     }
 }
 
-/// System prompt to send. Without speaker info this is exactly the user's
+/// System prompt to send. Without extra sections this is exactly the user's
 /// custom prompt (or `None` → provider default), i.e. unchanged behaviour.
-/// With speaker info, the section is appended to the custom prompt, or to
-/// the default instructions when no custom prompt is set. Block-tag rules
-/// are appended later by every LLM path, so they are not repeated here.
+/// Extra sections (speakers, previous-page context, ...) are appended to the
+/// custom prompt, or to the default instructions when no custom prompt is
+/// set. Block-tag rules are appended later by every LLM path, so they are not
+/// repeated here.
 fn effective_system_prompt(
     custom: Option<&str>,
     target_language: Option<&str>,
-    speaker_section: Option<&str>,
+    sections: &[String],
 ) -> Option<String> {
     let custom = custom.filter(|p| !p.trim().is_empty());
-    let Some(section) = speaker_section else {
+    if sections.is_empty() {
         return custom.map(str::to_string);
-    };
+    }
+    let section = sections.join("\n\n");
     let base = match custom {
         Some(p) => p.trim_end().to_string(),
         None => {
@@ -91,6 +101,67 @@ fn effective_system_prompt(
         }
     };
     Some(format!("{base}\n\n{section}"))
+}
+
+/// Lines of the previous page sent as context.
+const CONTEXT_LINES: usize = 10;
+/// Max characters of each source / translation line in the context.
+const CONTEXT_LINE_CHARS: usize = 160;
+
+/// The end of the previous page (speaker, source, translation) so the model
+/// keeps names, terms, tone and running sentences consistent across pages.
+/// Pipelines process pages in order, so in a multi-page run the previous
+/// page is already translated when this page's turn comes.
+fn previous_page_context(scene: &Scene, page: PageId, book: &CharacterBook) -> Option<String> {
+    let index = scene.pages.get_index_of(&page)?;
+    let (prev_id, _) = scene.pages.get_index(index.checked_sub(1)?)?;
+    let lines: Vec<String> = text_nodes(scene, *prev_id)
+        .into_iter()
+        .filter_map(|(id, _, t)| {
+            let source = t.text.as_deref()?.trim();
+            if source.is_empty() {
+                return None;
+            }
+            let speaker = book
+                .speaker_of(id)
+                .map(|c| one_line(&c.name))
+                .unwrap_or_else(|| "?".to_string());
+            let translation = t
+                .translation
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| clip(s, CONTEXT_LINE_CHARS))
+                .unwrap_or_else(|| "(not translated yet)".to_string());
+            Some(format!(
+                "- {speaker}: {} => {translation}",
+                clip(source, CONTEXT_LINE_CHARS)
+            ))
+        })
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    let skip = lines.len().saturating_sub(CONTEXT_LINES);
+    Some(format!(
+        "Context: the end of the previous page as `speaker: source => translation`. \
+         It is for continuity only: do not translate it again and do not include it in \
+         the output. Keep names, terms, each speaker's voice, and sentences that continue \
+         from it consistent with these translations.\n{}",
+        lines[skip..].join("\n")
+    ))
+}
+
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn clip(s: &str, max: usize) -> String {
+    let flat = one_line(s);
+    match flat.char_indices().nth(max) {
+        Some((idx, _)) => format!("{}…", &flat[..idx]),
+        None => flat,
+    }
 }
 
 fn collect_translation_targets(ctx: &EngineCtx<'_>) -> Vec<(NodeId, String)> {
@@ -193,27 +264,84 @@ mod tests {
 
     #[test]
     fn prompt_is_unchanged_without_speakers() {
-        assert_eq!(effective_system_prompt(None, Some("th-TH"), None), None);
+        assert_eq!(effective_system_prompt(None, Some("th-TH"), &[]), None);
         assert_eq!(
-            effective_system_prompt(Some("แปลเป็นไทย"), None, None).as_deref(),
+            effective_system_prompt(Some("แปลเป็นไทย"), None, &[]).as_deref(),
             Some("แปลเป็นไทย")
         );
-        assert_eq!(effective_system_prompt(Some("   "), None, None), None);
+        assert_eq!(effective_system_prompt(Some("   "), None, &[]), None);
     }
 
     #[test]
     fn speaker_section_is_appended_to_custom_prompt() {
-        let out = effective_system_prompt(Some("แปลเป็นไทย  "), None, Some("SPEAKERS")).unwrap();
+        let out =
+            effective_system_prompt(Some("แปลเป็นไทย  "), None, &["SPEAKERS".to_string()]).unwrap();
         assert_eq!(out, "แปลเป็นไทย\n\nSPEAKERS");
     }
 
     #[test]
     fn speaker_section_uses_default_intro_without_custom_prompt() {
-        let out = effective_system_prompt(None, Some("en-US"), Some("SPEAKERS")).unwrap();
+        let out = effective_system_prompt(None, Some("en-US"), &["SPEAKERS".to_string()]).unwrap();
         assert!(out.starts_with("You are a professional manga translator."));
         assert!(out.ends_with("\n\nSPEAKERS"));
         // Tag rules are appended by the LLM layer; don't duplicate them.
         assert!(!out.contains("[1], [2]"));
+    }
+
+    #[test]
+    fn previous_page_context_carries_source_translation_and_speaker() {
+        use koharu_core::{Character, CharacterBook, CharacterId};
+
+        let (a, b) = (node_id(1), node_id(2));
+        let mut first = Page::new("p1", 100, 100);
+        first.id = PageId(Uuid::from_u128(1));
+        for (id, text, tl) in [(a, "海だー!", Some("ทะเลแล้ว!")), (b, "元気だね", None)]
+        {
+            first.nodes.insert(
+                id,
+                Node {
+                    id,
+                    transform: Transform::default(),
+                    visible: true,
+                    kind: NodeKind::Text(TextData {
+                        text: Some(text.to_string()),
+                        translation: tl.map(str::to_string),
+                        ..Default::default()
+                    }),
+                },
+            );
+        }
+        let mut second = Page::new("p2", 100, 100);
+        second.id = PageId(Uuid::from_u128(2));
+        let mut scene = Scene::default();
+        scene.pages.insert(first.id, first);
+        scene.pages.insert(second.id, second);
+
+        let mut book = CharacterBook::default();
+        let sui = CharacterId(Uuid::from_u128(7));
+        book.set_characters(vec![Character {
+            id: sui,
+            name: "Sui".into(),
+            description: String::new(),
+        }]);
+        book.assign(&[a], Some(sui)).unwrap();
+
+        let ctx = previous_page_context(&scene, PageId(Uuid::from_u128(2)), &book).unwrap();
+        assert!(ctx.contains("- Sui: 海だー! => ทะเลแล้ว!"));
+        assert!(ctx.contains("- ?: 元気だね => (not translated yet)"));
+        // First page has no previous page.
+        assert!(previous_page_context(&scene, PageId(Uuid::from_u128(1)), &book).is_none());
+    }
+
+    #[test]
+    fn several_sections_are_appended_in_order() {
+        let out = effective_system_prompt(
+            Some("แปลเป็นไทย"),
+            None,
+            &["SPEAKERS".to_string(), "CONTEXT".to_string()],
+        )
+        .unwrap();
+        assert_eq!(out, "แปลเป็นไทย\n\nSPEAKERS\n\nCONTEXT");
     }
 
     #[test]

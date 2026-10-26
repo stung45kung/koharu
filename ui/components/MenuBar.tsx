@@ -70,7 +70,15 @@ export function MenuBar() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<TabId>('appearance')
   const hasPage = useSelectionStore((s) => s.pageId !== null)
-  const hasScene = useScene().scene !== null
+  const { scene } = useScene()
+  const hasScene = scene !== null
+  const selectedPageIds = useSelectionStore((s) => s.selectedPageIds)
+  // Selected pages in page order: pipelines run pages in the order given,
+  // and translation passes each page's result on as context to the next.
+  const selectedPagesInOrder = useMemo(
+    () => Object.keys(scene?.pages ?? {}).filter((id) => selectedPageIds.has(id)),
+    [scene?.pages, selectedPageIds],
+  )
   const shortcuts = usePreferencesStore((state) => state.shortcuts)
   const customPipeline = usePreferencesStore((state) => state.customPipeline)
   const setCustomPipeline = usePreferencesStore((state) => state.setCustomPipeline)
@@ -86,7 +94,7 @@ export function MenuBar() {
     return id
   }
 
-  const runPipeline = async (opts: { pageId?: string }) => {
+  const runPipeline = async (opts: { pageIds?: string[] }) => {
     const cfg = await getConfig()
     if (!cfg.pipeline) return
     const p = cfg.pipeline
@@ -106,7 +114,7 @@ export function MenuBar() {
     const prefs = usePreferencesStore.getState()
     await startPipeline({
       steps,
-      pages: opts.pageId ? [opts.pageId] : undefined,
+      pages: opts.pageIds?.length ? opts.pageIds : undefined,
       targetLanguage: editor.selectedLanguage,
       systemPrompt: prefs.customSystemPrompt,
       defaultFont: prefs.defaultFont,
@@ -120,7 +128,7 @@ export function MenuBar() {
     await startPipeline({ steps: [cfg.pipeline.inpainter], pages: [pageId] })
   }
 
-  const runCustomPipeline = async (opts: { pageId?: string }) => {
+  const runCustomPipeline = async (opts: { pageIds?: string[] }) => {
     const cfg = await getConfig()
     if (!cfg.pipeline) return
     const p = cfg.pipeline
@@ -138,7 +146,7 @@ export function MenuBar() {
     const editor = useEditorUiStore.getState()
     await startPipeline({
       steps,
-      pages: opts.pageId ? [opts.pageId] : undefined,
+      pages: opts.pageIds?.length ? opts.pageIds : undefined,
       targetLanguage: editor.selectedLanguage,
       systemPrompt: prefs.customSystemPrompt,
       defaultFont: prefs.defaultFont,
@@ -321,9 +329,17 @@ export function MenuBar() {
               data-testid='menu-process-current'
               className='text-[13px]'
               disabled={!hasPage}
-              onSelect={() => void runPipeline({ pageId: requirePageId() })}
+              onSelect={() => void runPipeline({ pageIds: [requirePageId()] })}
             >
               {t('menu.processCurrent')}
+            </MenubarItem>
+            <MenubarItem
+              data-testid='menu-process-selected'
+              className='text-[13px]'
+              disabled={selectedPagesInOrder.length < 2}
+              onSelect={() => void runPipeline({ pageIds: selectedPagesInOrder })}
+            >
+              {t('menu.processSelected', { count: selectedPagesInOrder.length })}
             </MenubarItem>
             <MenubarItem
               data-testid='menu-process-rerender'
@@ -345,9 +361,17 @@ export function MenuBar() {
             <MenubarItem
               className='text-[13px]'
               disabled={!hasPage || !hasSelectedSteps}
-              onSelect={() => void runCustomPipeline({ pageId: requirePageId() })}
+              onSelect={() => void runCustomPipeline({ pageIds: [requirePageId()] })}
             >
               {t('menu.runCustomCurrent')}
+            </MenubarItem>
+            <MenubarItem
+              data-testid='menu-run-custom-selected'
+              className='text-[13px]'
+              disabled={selectedPagesInOrder.length < 2 || !hasSelectedSteps}
+              onSelect={() => void runCustomPipeline({ pageIds: selectedPagesInOrder })}
+            >
+              {t('menu.runCustomSelected', { count: selectedPagesInOrder.length })}
             </MenubarItem>
             <MenubarItem
               className='text-[13px]'

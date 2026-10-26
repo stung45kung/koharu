@@ -53,6 +53,7 @@ import {
 } from '@/lib/font-utils'
 import { applyOp, invalidateScene, queueAutoRender } from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
+import { useTypesetting } from '@/lib/typesetting'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
 import { cn } from '@/lib/utils'
@@ -122,8 +123,13 @@ const predictionColor = (prediction?: FontPrediction | null): number[] | undefin
 }
 
 // Mirrors renderer precedence: explicit style color → predicted color → black.
-const effectiveColorOf = (style?: TextStyle | null, prediction?: FontPrediction | null): number[] =>
-  style?.color ?? predictionColor(prediction) ?? DEFAULT_COLOR
+// Block style colour → project default colour → detected source colour →
+// black (same order as the renderer's `resolve_text_color`).
+const effectiveColorOf = (
+  style?: TextStyle | null,
+  prediction?: FontPrediction | null,
+  projectColor?: number[] | null,
+): number[] => style?.color ?? projectColor ?? predictionColor(prediction) ?? DEFAULT_COLOR
 
 const hasExplicitColor = (node: TextNodeEntry) => Array.isArray(node.data.style?.color)
 
@@ -138,6 +144,7 @@ export function RenderControlsPanel() {
   const appDefaultFont = usePreferencesStore((s) => s.defaultFont)
   const favoriteFonts = usePreferencesStore((s) => s.favoriteFonts)
   const toggleFavoriteFont = usePreferencesStore((s) => s.toggleFavoriteFont)
+  const projectColor = useTypesetting().color ?? null
   const renderEffect = useEditorUiStore((s) => s.renderEffect)
   const setRenderEffect = useEditorUiStore((s) => s.setRenderEffect)
   const setRenderStroke = useEditorUiStore((s) => s.setRenderStroke)
@@ -259,7 +266,11 @@ export function RenderControlsPanel() {
 
   const selectedStyle = selectedNode?.data.style ?? firstNode?.data.style
   const colorSource = selectedNode ?? firstNode
-  const currentColor = effectiveColorOf(colorSource?.data.style, colorSource?.data.fontPrediction)
+  const currentColor = effectiveColorOf(
+    colorSource?.data.style,
+    colorSource?.data.fontPrediction,
+    projectColor,
+  )
   const currentColorHex = colorToHex(currentColor)
   const currentStroke = normalizeStroke(selectedStyle?.stroke)
   const currentStrokeColorHex = colorToHex(currentStroke.color ?? DEFAULT_STROKE_COLOR)
@@ -289,7 +300,7 @@ export function RenderControlsPanel() {
     const nextStyle: TextStyle = {
       fontFamilies: updates.fontFamilies ?? current?.fontFamilies ?? [],
       fontSize: updates.fontSize ?? current?.fontSize ?? null,
-      color: updates.color ?? effectiveColorOf(current, n.data.fontPrediction),
+      color: updates.color ?? effectiveColorOf(current, n.data.fontPrediction, projectColor),
       effect: updates.effect ?? current?.effect ?? null,
       stroke: updates.stroke ?? current?.stroke ?? null,
       textAlign: updates.textAlign ?? current?.textAlign ?? null,
@@ -392,6 +403,15 @@ export function RenderControlsPanel() {
         selectedFont={selectedNode?.data.style?.fontFamilies?.[0] ?? currentFontCandidate ?? undefined}
         selectedFontSize={currentFontSize}
         pageHeight={page?.height}
+        selectedColor={
+          selectedNode
+            ? effectiveColorOf(
+                selectedNode.data.style,
+                selectedNode.data.fontPrediction,
+                projectColor,
+              )
+            : undefined
+        }
         hasSelection={!!selectedNode}
       />
       {/* Scope */}

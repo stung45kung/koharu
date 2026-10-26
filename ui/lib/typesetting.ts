@@ -13,6 +13,8 @@ export type TypesettingDefaults = {
   /** Text size in px, measured on a page `referencePageHeight` px tall. */
   fontSizePx?: number | null
   referencePageHeight?: number | null
+  /** RGBA text colour for blocks without their own style. */
+  color?: number[] | null
 }
 
 export const TYPESETTING_URL = '/api/v1/typesetting'

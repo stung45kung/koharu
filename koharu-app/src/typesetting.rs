@@ -51,6 +51,7 @@ mod tests {
         let d = TypesettingDefaults {
             font_size_px: Some(28.5),
             reference_page_height: Some(1518),
+            color: Some([255, 255, 255, 255]),
         };
         save(&dir, &d).unwrap();
         assert_eq!(load(&dir), d);

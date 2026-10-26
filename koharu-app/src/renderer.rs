@@ -61,6 +61,8 @@ pub struct PageRenderOptions {
     /// Target text size for blocks without their own size: used when the
     /// text fits, otherwise shrunk like auto-size. `None` = pure auto-size.
     pub default_font_size: Option<f32>,
+    /// Project text colour for blocks without their own style.
+    pub default_color: Option<[u8; 4]>,
 }
 
 /// Per-block sprite output. `transform` becomes `TextData.sprite_transform`
@@ -193,6 +195,7 @@ impl Renderer {
                 opts.raster,
                 min_font,
                 opts.default_font_size,
+                opts.default_color,
             ) {
                 Ok(Some(out)) => rendered_blocks.push(out),
                 Ok(None) => {}
@@ -228,6 +231,7 @@ impl Renderer {
         raster: RasterOptions,
         min_font_size: f32,
         default_font_size: Option<f32>,
+        default_color: Option<[u8; 4]>,
     ) -> Result<Option<RenderedBlock>> {
         let translation = block.translation.trim();
         if translation.is_empty() {
@@ -253,8 +257,12 @@ impl Renderer {
 
         let font = self.select_font(&style)?;
         let block_effect = style.effect.unwrap_or(*effect);
-        let color =
-            resolve_text_color(block.style.as_ref(), &style, block.font_prediction.as_ref());
+        let color = resolve_text_color(
+            block.style.as_ref(),
+            &style,
+            block.font_prediction.as_ref(),
+            default_color,
+        );
 
         let writing_mode = writing_mode_for_block(&layout_source);
         // Translations default to centre alignment inside a bubble — each
@@ -948,13 +956,19 @@ fn resolve_stroke_style(
     })
 }
 
+/// Block style colour → project default colour → detected source colour →
+/// black.
 fn resolve_text_color(
     explicit_style: Option<&TextStyle>,
     derived_style: &TextStyle,
     font_prediction: Option<&FontPrediction>,
+    project_default: Option<[u8; 4]>,
 ) -> [u8; 4] {
     if explicit_style.is_some() {
         return derived_style.color;
+    }
+    if let Some(color) = project_default {
+        return color;
     }
     if let Some(pred) = font_prediction {
         return [
@@ -1140,8 +1154,37 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            resolve_text_color(None, &derived, Some(&prediction)),
+            resolve_text_color(None, &derived, Some(&prediction), None),
             [12, 34, 56, 255]
+        );
+    }
+
+    #[test]
+    fn project_default_color_wins_over_prediction_but_not_block_style() {
+        let derived = TextStyle {
+            font_families: Vec::new(),
+            font_size: None,
+            color: [0, 0, 0, 255],
+            effect: None,
+            stroke: None,
+            text_align: None,
+        };
+        let prediction = FontPrediction {
+            text_color: [12, 34, 56],
+            ..Default::default()
+        };
+        let white = Some([255, 255, 255, 255]);
+        assert_eq!(
+            resolve_text_color(None, &derived, Some(&prediction), white),
+            [255, 255, 255, 255]
+        );
+        let explicit = TextStyle {
+            color: [200, 100, 50, 255],
+            ..derived.clone()
+        };
+        assert_eq!(
+            resolve_text_color(Some(&explicit), &explicit, Some(&prediction), white),
+            [200, 100, 50, 255]
         );
     }
 
@@ -1160,7 +1203,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            resolve_text_color(Some(&explicit), &explicit, Some(&prediction)),
+            resolve_text_color(Some(&explicit), &explicit, Some(&prediction), None),
             [200, 100, 50, 255]
         );
     }

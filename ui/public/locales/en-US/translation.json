@@ -495,9 +495,11 @@
     "notSet": "not set (app default)",
     "notSetAuto": "not set (auto-fit)",
     "sizeValue": "{{size}}px on {{ref}}px-tall page → {{here}}px here",
-    "saveFromSelection": "Use selected block's font & size",
+    "saveFromSelection": "Use selected block's font, size & color",
     "clear": "Clear",
-    "hint": "Tune one block, then save it here. Other pages scale the size to their height; text only shrinks when it doesn't fit. Blocks with their own font or size keep them. Re-render pages to apply.",
-    "hintNoSize": "The selected block has no size of its own (auto). Set a size above first to save it as the project size; only the font will be saved otherwise."
+    "hint": "Tune one block, then save it here. Other pages scale the size to their height; text only shrinks when it doesn't fit. Blocks with their own font, size or color keep them. Re-render pages to apply.",
+    "hintNoSize": "The selected block has no size of its own (auto), so only its font and color will be saved. Set a size above first to save it too.",
+    "color": "Color",
+    "notSetColor": "not set (detected from source)"
   }
 }

@@ -20,6 +20,10 @@ pub struct TypesettingDefaults {
     /// resolution get a proportionally scaled size.
     #[serde(default)]
     pub reference_page_height: Option<u32>,
+    /// Text colour (RGBA) for blocks without their own style. Takes
+    /// precedence over the colour detected from the source lettering.
+    #[serde(default)]
+    pub color: Option<[u8; 4]>,
 }
 
 impl TypesettingDefaults {
@@ -48,6 +52,7 @@ mod tests {
         let bad = TypesettingDefaults {
             font_size_px: Some(f32::NAN),
             reference_page_height: None,
+            ..Default::default()
         };
         assert_eq!(bad.font_size_for_page(1500), None);
     }
@@ -57,6 +62,7 @@ mod tests {
         let d = TypesettingDefaults {
             font_size_px: Some(30.0),
             reference_page_height: Some(1500),
+            ..Default::default()
         };
         assert_eq!(d.font_size_for_page(1500), Some(30.0));
         assert_eq!(d.font_size_for_page(3000), Some(60.0));
@@ -68,6 +74,7 @@ mod tests {
         let d = TypesettingDefaults {
             font_size_px: Some(24.0),
             reference_page_height: None,
+            ..Default::default()
         };
         assert_eq!(d.font_size_for_page(6000), Some(24.0));
     }

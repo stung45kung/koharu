@@ -91,6 +91,7 @@ impl Engine for Model {
                 .map(render_target_language_tag),
             raster: Default::default(),
             default_font_size: ctx.typesetting.font_size_for_page(page_height),
+            default_color: ctx.typesetting.color,
         };
 
         // `render_page` is synchronous and CPU-bound. It runs inline on the

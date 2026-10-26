@@ -17,8 +17,17 @@ type Props = {
   selectedFontSize?: number
   /** Height of the page the selection is on. */
   pageHeight?: number
+  /** Effective RGBA colour of the selected block. */
+  selectedColor?: number[]
   hasSelection: boolean
 }
+
+const toHex = (c: number[]) =>
+  '#' +
+  c
+    .slice(0, 3)
+    .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
+    .join('')
 
 /**
  * Project-wide typesetting defaults: tune one block, then save its font and
@@ -29,6 +38,7 @@ export function ProjectTypesettingDefaults({
   selectedFont,
   selectedFontSize,
   pageHeight,
+  selectedColor,
   hasSelection,
 }: Props) {
   const { t } = useTranslation()
@@ -38,7 +48,8 @@ export function ProjectTypesettingDefaults({
 
   const projectFont = scene?.project?.style?.defaultFont ?? null
   const sizeHere = pageHeight ? defaultSizeForPage(typesetting, pageHeight) : null
-  const hasDefaults = !!projectFont || !!typesetting.fontSizePx
+  const projectColor = typesetting.color ?? null
+  const hasDefaults = !!projectFont || !!typesetting.fontSizePx || !!projectColor
 
   const setProjectFont = (font: string | null) =>
     applyOp(ops.updateProjectMeta({ style: { defaultFont: font } }))
@@ -46,12 +57,17 @@ export function ProjectTypesettingDefaults({
   const saveFromSelection = async () => {
     try {
       if (selectedFont) await setProjectFont(selectedFont)
-      if (selectedFontSize && pageHeight) {
-        await save.mutateAsync({
-          fontSizePx: selectedFontSize,
-          referencePageHeight: pageHeight,
-        })
-      }
+      const sizePart =
+        selectedFontSize && pageHeight
+          ? { fontSizePx: selectedFontSize, referencePageHeight: pageHeight }
+          : {
+              fontSizePx: typesetting.fontSizePx ?? null,
+              referencePageHeight: typesetting.referencePageHeight ?? null,
+            }
+      await save.mutateAsync({
+        ...sizePart,
+        color: selectedColor ?? typesetting.color ?? null,
+      })
     } catch (err) {
       useEditorUiStore.getState().showError(String(err))
     }
@@ -89,6 +105,20 @@ export function ProjectTypesettingDefaults({
               })
             : t('typesetting.notSetAuto')}
         </span>
+        <span className='text-muted-foreground'>{t('typesetting.color')}</span>
+        <span className='flex items-center gap-1.5' data-testid='project-typesetting-color'>
+          {projectColor ? (
+            <>
+              <span
+                className='inline-block size-3 rounded-sm ring-1 ring-border'
+                style={{ backgroundColor: toHex(projectColor) }}
+              />
+              {toHex(projectColor)}
+            </>
+          ) : (
+            t('typesetting.notSetColor')
+          )}
+        </span>
       </div>
       <div className='flex flex-wrap gap-1'>
         <Button
@@ -96,7 +126,7 @@ export function ProjectTypesettingDefaults({
           size='xs'
           className='text-[11px]'
           data-testid='project-typesetting-save'
-          disabled={!hasSelection || (!selectedFont && !selectedFontSize) || save.isPending}
+          disabled={!hasSelection || save.isPending}
           onClick={() => void saveFromSelection()}
         >
           <BookmarkIcon className='size-3' />

@@ -10,7 +10,10 @@ import { server } from '../msw/server'
 
 const book = {
   version: 1,
-  characters: [{ id: 'c1', name: 'Hood', description: 'archaic speech' }],
+  characters: [
+    { id: 'c1', name: 'Hood', description: 'archaic speech' },
+    { id: 'c2', name: 'Narrator', description: 'neutral' },
+  ],
   speakers: { t1: 'c1', t2: 'c1' },
 }
 
@@ -24,12 +27,18 @@ describe('CharacterManagerDialog', () => {
     )
   })
 
-  it('lists characters with their usage count', async () => {
+  it('lists characters and edits the selected one', async () => {
     renderWithQuery(<CharacterManagerDialog open onOpenChange={() => {}} />)
 
-    await waitFor(() => expect(screen.getByTestId('character-name-0')).toHaveValue('Hood'))
-    expect(screen.getByTestId('character-description-0')).toHaveValue('archaic speech')
-    expect(screen.getByText('characters.usedBy')).toBeInTheDocument()
+    // First character is selected by default.
+    await waitFor(() => expect(screen.getByTestId('character-name')).toHaveValue('Hood'))
+    expect(screen.getByTestId('character-description')).toHaveValue('archaic speech')
+    expect(screen.getByTestId('character-item-0')).toHaveTextContent('Hood')
+    expect(screen.getByTestId('character-item-1')).toHaveTextContent('Narrator')
+
+    await userEvent.click(screen.getByTestId('character-item-1'))
+    expect(screen.getByTestId('character-name')).toHaveValue('Narrator')
+    expect(screen.getByTestId('character-description')).toHaveValue('neutral')
   })
 
   it('saves a newly added character', async () => {
@@ -43,20 +52,32 @@ describe('CharacterManagerDialog', () => {
     )
     const onOpenChange = vi.fn()
     renderWithQuery(<CharacterManagerDialog open onOpenChange={onOpenChange} />)
-    await waitFor(() => expect(screen.getByTestId('character-name-0')).toHaveValue('Hood'))
+    await waitFor(() => expect(screen.getByTestId('character-name')).toHaveValue('Hood'))
 
     await userEvent.click(screen.getByTestId('character-add'))
-    await userEvent.type(screen.getByTestId('character-name-1'), 'Narrator')
+    // The new character is selected and empty.
+    expect(screen.getByTestId('character-name')).toHaveValue('')
+    await userEvent.type(screen.getByTestId('character-name'), 'Sensei')
     await userEvent.click(screen.getByTestId('character-save'))
 
     await waitFor(() => expect(puts).toHaveLength(1))
     expect(puts[0]).toMatchObject({
       characters: [
         { id: 'c1', name: 'Hood' },
-        { name: 'Narrator', description: '' },
+        { id: 'c2', name: 'Narrator' },
+        { name: 'Sensei', description: '' },
       ],
     })
     await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false))
+  })
+
+  it('deleting keeps a neighbour selected', async () => {
+    renderWithQuery(<CharacterManagerDialog open onOpenChange={() => {}} />)
+    await waitFor(() => expect(screen.getByTestId('character-name')).toHaveValue('Hood'))
+
+    await userEvent.click(screen.getByTestId('character-delete'))
+    expect(screen.getByTestId('character-name')).toHaveValue('Narrator')
+    expect(screen.queryByTestId('character-item-1')).toBeNull()
   })
 
   it('refuses to save a character without a name', async () => {
@@ -68,7 +89,7 @@ describe('CharacterManagerDialog', () => {
       }),
     )
     renderWithQuery(<CharacterManagerDialog open onOpenChange={() => {}} />)
-    await waitFor(() => expect(screen.getByTestId('character-name-0')).toHaveValue('Hood'))
+    await waitFor(() => expect(screen.getByTestId('character-name')).toHaveValue('Hood'))
 
     await userEvent.click(screen.getByTestId('character-add'))
     await userEvent.click(screen.getByTestId('character-save'))

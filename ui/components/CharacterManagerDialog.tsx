@@ -7,7 +7,6 @@ import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import {
   EMPTY_CHARACTER_BOOK,
@@ -17,6 +16,9 @@ import {
   type Character,
 } from '@/lib/characters'
 
+const MAX_NAME = 80
+const MAX_DESCRIPTION = 4000
+
 type CharacterManagerDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -24,6 +26,11 @@ type CharacterManagerDialogProps = {
 
 /**
  * Edit the open project's character list (name + free-form speech notes).
+ *
+ * Two panes: the character list on the left, the selected character's
+ * editor on the right (its description box fills the dialog height, so long
+ * profiles stay readable however many characters there are).
+ *
  * Changes are kept in a local draft and written on Save; deleting a
  * character that is in use turns its blocks back into "unknown speaker".
  */
@@ -33,6 +40,7 @@ export function CharacterManagerDialog({ open, onOpenChange }: CharacterManagerD
   const book = query.data ?? EMPTY_CHARACTER_BOOK
   const save = useSaveCharacters()
   const [draft, setDraft] = useState<Character[]>([])
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initialized, setInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,7 +52,9 @@ export function CharacterManagerDialog({ open, onOpenChange }: CharacterManagerD
       return
     }
     if (!initialized && query.isSuccess) {
-      setDraft(query.data.characters.map((c) => ({ ...c })))
+      const seeded = query.data.characters.map((c) => ({ ...c }))
+      setDraft(seeded)
+      setSelectedId(seeded[0]?.id ?? null)
       setError(null)
       setInitialized(true)
     }
@@ -56,18 +66,29 @@ export function CharacterManagerDialog({ open, onOpenChange }: CharacterManagerD
     return counts
   }, [book.speakers])
 
+  const selected = draft.find((c) => c.id === selectedId) ?? null
+
   const update = (id: string, patch: Partial<Character>) =>
     setDraft((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)))
 
-  const add = () =>
-    setDraft((prev) => [...prev, { id: newCharacterId(), name: '', description: '' }])
+  const add = () => {
+    const id = newCharacterId()
+    setDraft((prev) => [...prev, { id, name: '', description: '' }])
+    setSelectedId(id)
+  }
 
-  const remove = (id: string) => setDraft((prev) => prev.filter((c) => c.id !== id))
-
-  const hasBlankName = draft.some((c) => !c.name.trim())
+  const remove = (id: string) => {
+    const index = draft.findIndex((c) => c.id === id)
+    const next = draft.filter((c) => c.id !== id)
+    setDraft(next)
+    // Keep a neighbour selected so the editor doesn't go blank.
+    setSelectedId(next[Math.min(index, next.length - 1)]?.id ?? null)
+  }
 
   const handleSave = async () => {
-    if (hasBlankName) {
+    const blank = draft.find((c) => !c.name.trim())
+    if (blank) {
+      setSelectedId(blank.id)
       setError(t('characters.nameRequired'))
       return
     }
@@ -81,91 +102,130 @@ export function CharacterManagerDialog({ open, onOpenChange }: CharacterManagerD
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='flex max-h-[85vh] max-w-xl flex-col gap-3' data-testid='characters-dialog'>
-        <div>
+      <DialogContent
+        className='flex h-[85vh] w-[95vw] max-w-5xl flex-col gap-3 sm:max-w-5xl'
+        data-testid='characters-dialog'
+      >
+        <div className='shrink-0 pr-6'>
           <DialogTitle>{t('characters.title')}</DialogTitle>
-          <DialogDescription className='mt-1 text-xs'>{t('characters.description')}</DialogDescription>
+          <DialogDescription className='mt-1 text-xs'>
+            {t('characters.description')}
+          </DialogDescription>
         </div>
 
-        <ScrollArea className='min-h-0 flex-1'>
-          <div className='flex flex-col gap-2 pr-2'>
-            {draft.length === 0 && (
-              <p className='rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground'>
-                {t('characters.empty')}
-              </p>
-            )}
-            {draft.map((c, index) => (
-              <div
-                key={c.id}
-                data-testid={`character-row-${index}`}
-                className='flex flex-col gap-1.5 rounded-md p-2 ring-1 ring-border'
-              >
-                <div className='flex items-center gap-1.5'>
-                  <Input
-                    data-testid={`character-name-${index}`}
-                    value={c.name}
-                    maxLength={80}
-                    placeholder={t('characters.namePlaceholder')}
-                    onChange={(e) => update(c.id, { name: e.target.value })}
-                    className='h-7 text-xs'
-                  />
-                  {usage[c.id] ? (
-                    <span className='shrink-0 text-[10px] text-muted-foreground'>
-                      {t('characters.usedBy', { count: usage[c.id] })}
+        <div className='flex min-h-0 flex-1 gap-3'>
+          {/* Character list */}
+          <div className='flex w-60 shrink-0 flex-col gap-2'>
+            <div
+              className='min-h-0 flex-1 overflow-y-auto rounded-md p-1 ring-1 ring-border'
+              data-testid='character-list'
+            >
+              {draft.length === 0 && (
+                <p className='p-2 text-xs text-muted-foreground'>{t('characters.empty')}</p>
+              )}
+              {draft.map((c, index) => {
+                const active = c.id === selectedId
+                return (
+                  <button
+                    key={c.id}
+                    type='button'
+                    data-testid={`character-item-${index}`}
+                    data-selected={active}
+                    onClick={() => setSelectedId(c.id)}
+                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors ${
+                      active ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                    }`}
+                  >
+                    <span
+                      className={`min-w-0 flex-1 truncate ${c.name.trim() ? '' : 'italic opacity-60'}`}
+                    >
+                      {c.name.trim() || t('characters.unnamed')}
                     </span>
-                  ) : null}
+                    {usage[c.id] ? (
+                      <span className='shrink-0 text-[10px] opacity-70'>
+                        {t('characters.usedBy', { count: usage[c.id] })}
+                      </span>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+            <Button
+              variant='outline'
+              size='sm'
+              onClick={add}
+              disabled={!initialized}
+              data-testid='character-add'
+            >
+              <PlusIcon className='size-3.5' />
+              {t('characters.add')}
+            </Button>
+          </div>
+
+          {/* Editor for the selected character */}
+          <div className='flex min-w-0 flex-1 flex-col gap-2'>
+            {selected ? (
+              <>
+                <div className='flex shrink-0 items-center gap-2'>
+                  <Input
+                    data-testid='character-name'
+                    value={selected.name}
+                    maxLength={MAX_NAME}
+                    placeholder={t('characters.namePlaceholder')}
+                    onChange={(e) => update(selected.id, { name: e.target.value })}
+                    className='h-8 text-sm'
+                    autoFocus={!selected.name}
+                  />
                   <Button
-                    data-testid={`character-delete-${index}`}
+                    data-testid='character-delete'
                     aria-label={t('characters.delete')}
                     variant='ghost'
-                    size='icon-xs'
-                    onClick={() => remove(c.id)}
+                    size='icon-sm'
+                    onClick={() => remove(selected.id)}
                     className='text-rose-600 hover:text-rose-600'
                   >
-                    <Trash2Icon className='size-3' />
+                    <Trash2Icon className='size-4' />
                   </Button>
                 </div>
+                {usage[selected.id] ? (
+                  <p className='shrink-0 text-[10px] text-muted-foreground'>
+                    {t('characters.deleteWarning', { count: usage[selected.id] })}
+                  </p>
+                ) : null}
                 <Textarea
-                  data-testid={`character-description-${index}`}
-                  value={c.description}
-                  maxLength={4000}
-                  rows={3}
+                  data-testid='character-description'
+                  value={selected.description}
+                  maxLength={MAX_DESCRIPTION}
                   placeholder={t('characters.descriptionPlaceholder')}
-                  onChange={(e) => update(c.id, { description: e.target.value })}
-                  className='min-h-0 resize-y px-2 py-1 text-xs'
+                  onChange={(e) => update(selected.id, { description: e.target.value })}
+                  className='min-h-0 flex-1 resize-none px-3 py-2 text-xs leading-relaxed'
                 />
+                <p className='shrink-0 text-right text-[10px] text-muted-foreground tabular-nums'>
+                  {selected.description.length} / {MAX_DESCRIPTION}
+                </p>
+              </>
+            ) : (
+              <div className='flex flex-1 items-center justify-center rounded-md border border-dashed border-border text-xs text-muted-foreground'>
+                {t('characters.selectPrompt')}
               </div>
-            ))}
+            )}
           </div>
-        </ScrollArea>
+        </div>
 
-        {error && <p className='text-xs text-rose-600'>{error}</p>}
-
-        <div className='flex items-center justify-between gap-2'>
-          <Button
-            variant='outline'
-            size='sm'
-            onClick={add}
-            disabled={!initialized}
-            data-testid='character-add'
-          >
-            <PlusIcon className='size-3.5' />
-            {t('characters.add')}
+        <div className='flex shrink-0 items-center justify-end gap-2'>
+          {error && <p className='mr-auto text-xs text-rose-600'>{error}</p>}
+          <Button variant='ghost' size='sm' onClick={() => onOpenChange(false)}>
+            {t('characters.cancel')}
           </Button>
-          <div className='flex gap-2'>
-            <Button variant='ghost' size='sm' onClick={() => onOpenChange(false)}>
-              {t('characters.cancel')}
-            </Button>
-            <Button
-              size='sm'
-              onClick={() => void handleSave()}
-              disabled={!initialized || save.isPending}
-              data-testid='character-save'
-            >
-              {save.isPending && <Loader2Icon className='size-3.5 animate-spin' />}
-              {t('characters.save')}
-            </Button>
-          </div>
+          <Button
+            size='sm'
+            onClick={() => void handleSave()}
+            disabled={!initialized || save.isPending}
+            data-testid='character-save'
+          >
+            {save.isPending && <Loader2Icon className='size-3.5 animate-spin' />}
+            {t('characters.save')}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

@@ -473,6 +473,9 @@
     "nameRequired": "Every character needs a name.",
     "usedBy": "{{count}} blocks",
     "speakerLabel": "Speaker",
-    "unknownSpeaker": "Unknown speaker"
+    "unknownSpeaker": "Unknown speaker",
+    "unnamed": "(unnamed)",
+    "selectPrompt": "Select a character on the left, or add one.",
+    "deleteWarning": "Used by {{count}} blocks. Deleting this character makes them unknown speaker."
   }
 }

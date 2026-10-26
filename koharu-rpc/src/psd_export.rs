@@ -249,6 +249,22 @@ fn text_to_psd(
         _ => transform,
     };
 
+    // A block the user rotated: the sprite is already rotated (and its
+    // bounds expanded), so the editable text gets an upright box of the
+    // block's size centred on the sprite, plus the user's angle.
+    let user_rotation = transform.rotation_deg;
+    let (rotation_deg, text_box) = if user_rotation.abs() > 0.01 && user_rotation.is_finite() {
+        let cx = layer_transform.x + layer_transform.width / 2.0;
+        let cy = layer_transform.y + layer_transform.height / 2.0;
+        let (w, h) = (transform.width.max(1.0), transform.height.max(1.0));
+        (
+            Some(user_rotation + text.rotation_deg.unwrap_or(0.0)),
+            Some([cx - w / 2.0, cy - h / 2.0, w, h]),
+        )
+    } else {
+        (text.rotation_deg, None)
+    };
+
     PsdTextBlock {
         id: node_id.to_string(),
         x: layer_transform.x,
@@ -258,7 +274,8 @@ fn text_to_psd(
         translation: text.translation.clone(),
         style: text.style.as_ref().map(convert_style),
         rendered: text.sprite.as_ref().map(blob_ref_to_psd),
-        rotation_deg: text.rotation_deg,
+        rotation_deg,
+        text_box,
         font_prediction: text.font_prediction.as_ref().map(convert_prediction),
         source_direction: text.source_direction.map(convert_dir),
         rendered_direction: text.rendered_direction.map(convert_dir),
@@ -319,6 +336,47 @@ mod tests {
     use koharu_core::{BlobRef, NodeId, TextData, Transform};
 
     use super::text_to_psd;
+
+    #[test]
+    fn rotated_block_gets_upright_text_box_and_user_angle() {
+        let node_transform = Transform {
+            x: 100.0,
+            y: 100.0,
+            width: 80.0,
+            height: 40.0,
+            rotation_deg: 30.0,
+        };
+        // Rotated sprite bounds (expanded), centred on (140, 120).
+        let sprite_transform = Transform {
+            x: 95.0,
+            y: 83.0,
+            width: 90.0,
+            height: 74.0,
+            rotation_deg: 30.0,
+        };
+        let text = TextData {
+            translation: Some("เอียง".to_string()),
+            sprite: Some(BlobRef::new("sprite")),
+            sprite_transform: Some(sprite_transform),
+            ..Default::default()
+        };
+        let block = text_to_psd(&NodeId::new(), &node_transform, &text, Some(0));
+        // Raster layer keeps the rotated sprite bounds.
+        assert_eq!((block.x, block.y), (95.0, 83.0));
+        assert_eq!(block.rotation_deg, Some(30.0));
+        assert_eq!(block.text_box, Some([100.0, 100.0, 80.0, 40.0]));
+    }
+
+    #[test]
+    fn unrotated_block_has_no_text_box() {
+        let text = TextData {
+            translation: Some("ตรง".to_string()),
+            ..Default::default()
+        };
+        let block = text_to_psd(&NodeId::new(), &Transform::default(), &text, Some(0));
+        assert_eq!(block.text_box, None);
+        assert_eq!(block.rotation_deg, None);
+    }
 
     #[test]
     fn text_to_psd_uses_sprite_transform_for_rendered_text_layer() {

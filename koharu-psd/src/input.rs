@@ -71,6 +71,10 @@ pub struct PsdTextBlock {
     pub style: Option<PsdTextStyle>,
     pub rendered: Option<PsdBlobRef>,
     pub rotation_deg: Option<f32>,
+    /// Upright `[x, y, width, height]` box for the editable text of a block
+    /// the user rotated; its centre is the rotation centre. `x/y/width/height`
+    /// above then describe the (larger) rotated raster bounds.
+    pub text_box: Option<[f32; 4]>,
     pub font_prediction: Option<PsdFontPrediction>,
     pub source_direction: Option<PsdTextDirection>,
     pub rendered_direction: Option<PsdTextDirection>,

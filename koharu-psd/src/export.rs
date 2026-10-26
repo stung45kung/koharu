@@ -277,20 +277,27 @@ fn text_layer(
                 })
                 .unwrap_or(0.0) as f64;
             let rotation_rad = rotation_deg.to_radians();
-            let transform = [
-                rotation_rad.cos(),
-                rotation_rad.sin(),
-                -rotation_rad.sin(),
-                rotation_rad.cos(),
-                block.x as f64,
-                block.y as f64,
-            ];
-            let bounds = [
-                block.x as f64,
-                block.y as f64,
-                block.x as f64 + block.width as f64,
-                block.y as f64 + block.height as f64,
-            ];
+            let (sin, cos) = rotation_rad.sin_cos();
+            // Rotated blocks carry an upright text box; the text origin is
+            // that box's top-left corner rotated about the box centre.
+            let (box_x, box_y, box_w, box_h) = match block.text_box {
+                Some([x, y, w, h]) => (x as f64, y as f64, w as f64, h as f64),
+                None => (
+                    block.x as f64,
+                    block.y as f64,
+                    block.width as f64,
+                    block.height as f64,
+                ),
+            };
+            let (origin_x, origin_y) = if block.text_box.is_some() {
+                let (cx, cy) = (box_x + box_w / 2.0, box_y + box_h / 2.0);
+                let (hw, hh) = (box_w / 2.0, box_h / 2.0);
+                (cx - hw * cos + hh * sin, cy - hw * sin - hh * cos)
+            } else {
+                (box_x, box_y)
+            };
+            let transform = [cos, sin, -sin, cos, origin_x, origin_y];
+            let bounds = [box_x, box_y, box_x + box_w, box_y + box_h];
 
             Some(TextLayerMetadata {
                 index,
@@ -305,8 +312,8 @@ fn text_layer(
                 color,
                 faux_bold,
                 faux_italic,
-                box_width: block.width.max(1.0) as f64,
-                box_height: block.height.max(1.0) as f64,
+                box_width: box_w.max(1.0),
+                box_height: box_h.max(1.0),
             })
         }
     };

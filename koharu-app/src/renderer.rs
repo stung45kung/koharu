@@ -188,7 +188,8 @@ impl Renderer {
         // once to record per-ID bboxes and then answers seed→bbox
         // lookups in O(seed_area).
         let bubble_index: Option<BubbleIndex> = bubble_mask.map(|m| BubbleIndex::new(m.to_luma8()));
-        let layout_boxes = resolve_layout_boxes(blocks, bubble_index.as_ref());
+        let mut layout_boxes = resolve_layout_boxes(blocks, bubble_index.as_ref());
+        widen_narrow_boxes(blocks, &mut layout_boxes, image_width as f32);
         let bubble_mask = bubble_index.as_ref().map(BubbleIndex::mask);
 
         let mut rendered_blocks = Vec::with_capacity(blocks.len());
@@ -911,6 +912,69 @@ fn layout_source_from_input(block: &RenderBlockInput, translation: &str) -> Rend
     }
 }
 
+/// Target width of a widened box relative to its height.
+const WIDEN_RATIO: f32 = 0.8;
+/// A box is "narrow" when its height exceeds its width by this factor.
+const NARROW_ASPECT: f32 = 1.2;
+/// Space kept between a widened box and a neighbouring block.
+const WIDEN_GAP: f32 = 4.0;
+
+/// Horizontal translations (e.g. Thai) of vertical source text get a tall,
+/// narrow detector box, which wraps them into one-word lines. Widen such
+/// boxes around their centre (to `WIDEN_RATIO` × height), stopping short of
+/// neighbouring blocks on the same rows and the page edges. Skips locked
+/// boxes and boxes already expanded into their bubble.
+fn widen_narrow_boxes(
+    blocks: &[RenderBlockInput],
+    boxes: &mut [ResolvedLayoutBox],
+    page_width: f32,
+) {
+    let seeds: Vec<LayoutBox> = blocks.iter().map(seed_layout_box).collect();
+    for (i, block) in blocks.iter().enumerate() {
+        let Some(resolved) = boxes.get(i) else { break };
+        let current = resolved.layout_box;
+        let translation = block.translation.trim();
+        if block.lock_layout_box || current != resolved.seed_box || translation.is_empty() {
+            continue;
+        }
+        let mode = writing_mode_for_block(&layout_source_from_input(block, translation));
+        if mode != WritingMode::Horizontal || current.height < current.width * NARROW_ASPECT {
+            continue;
+        }
+        let target = current.height * WIDEN_RATIO;
+        if target <= current.width {
+            continue;
+        }
+        let centre = current.x + current.width / 2.0;
+        let mut left = (centre - target / 2.0).max(0.0);
+        let mut right = (centre + target / 2.0).min(page_width.max(current.x + current.width));
+        for (j, other) in seeds.iter().enumerate() {
+            if j == i {
+                continue;
+            }
+            let same_rows =
+                other.y < current.y + current.height && other.y + other.height > current.y;
+            if !same_rows {
+                continue;
+            }
+            if other.x >= current.x + current.width {
+                right = right.min(other.x - WIDEN_GAP);
+            } else if other.x + other.width <= current.x {
+                left = left.max(other.x + other.width + WIDEN_GAP);
+            }
+        }
+        // Never end up narrower than the original box.
+        let left = left.min(current.x);
+        let right = right.max(current.x + current.width);
+        boxes[i].layout_box = LayoutBox {
+            x: left,
+            y: current.y,
+            width: right - left,
+            height: current.height,
+        };
+    }
+}
+
 fn seed_layout_box(block: &RenderBlockInput) -> LayoutBox {
     LayoutBox {
         x: block.transform.x,
@@ -1319,6 +1383,52 @@ mod tests {
         assert!(layout_boxes[0].layout_box.width > blocks[0].transform.width);
         assert!(layout_boxes[0].layout_box.height > blocks[0].transform.height);
         assert_eq!(layout_boxes[0].bubble_id, Some(1));
+    }
+
+    fn resolved(blocks: &[RenderBlockInput]) -> Vec<ResolvedLayoutBox> {
+        resolve_layout_boxes(blocks, None)
+    }
+
+    #[test]
+    fn narrow_box_widens_around_its_centre() {
+        let blocks = vec![block(100.0, 50.0, 40.0, 200.0, "ไปทะเลกันเถอะ")];
+        let mut boxes = resolved(&blocks);
+        widen_narrow_boxes(&blocks, &mut boxes, 1000.0);
+        let b = boxes[0].layout_box;
+        assert_eq!(b.width, 160.0); // 200 * 0.8
+        assert_eq!(b.x + b.width / 2.0, 120.0); // centre kept
+        assert_eq!((b.y, b.height), (50.0, 200.0));
+    }
+
+    #[test]
+    fn widening_stops_at_neighbours_and_page_edge() {
+        let blocks = vec![
+            block(10.0, 50.0, 40.0, 200.0, "ซ้าย"),
+            block(90.0, 60.0, 40.0, 200.0, "ขวา"),
+        ];
+        let mut boxes = resolved(&blocks);
+        widen_narrow_boxes(&blocks, &mut boxes, 1000.0);
+        let first = boxes[0].layout_box;
+        assert_eq!(first.x, 0.0); // clamped to the page edge
+        assert!(first.x + first.width <= 90.0 - WIDEN_GAP + 0.001);
+        let second = boxes[1].layout_box;
+        assert!(second.x >= 50.0 + WIDEN_GAP - 0.001);
+    }
+
+    #[test]
+    fn wide_locked_or_vertical_boxes_are_left_alone() {
+        let mut locked = block(100.0, 50.0, 40.0, 200.0, "ล็อก");
+        locked.lock_layout_box = true;
+        let blocks = vec![
+            block(300.0, 50.0, 200.0, 80.0, "กว้างอยู่แล้ว"),
+            locked,
+            block(600.0, 50.0, 40.0, 200.0, "縦書きのまま"),
+        ];
+        let mut boxes = resolved(&blocks);
+        widen_narrow_boxes(&blocks, &mut boxes, 1000.0);
+        for (b, r) in blocks.iter().zip(&boxes) {
+            assert_eq!(r.layout_box, seed_layout_box(b));
+        }
     }
 
     #[test]

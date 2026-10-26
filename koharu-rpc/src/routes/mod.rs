@@ -14,3 +14,4 @@ pub mod operations;
 pub mod pages;
 pub mod pipelines;
 pub mod projects;
+pub mod typesetting;

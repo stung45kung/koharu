@@ -23,6 +23,7 @@ pub mod projects;
 pub mod renderer;
 pub mod session;
 pub mod speaker_guess;
+pub mod typesetting;
 pub mod utils;
 
 pub use ai::AiManager;

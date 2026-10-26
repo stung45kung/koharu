@@ -551,6 +551,7 @@ async fn put_mask(
             ..Default::default()
         };
         let characters = session.characters();
+        let typesetting = session.typesetting();
         let ctx = EngineCtx {
             scene: &scene,
             page: page_id,
@@ -561,6 +562,7 @@ async fn put_mask(
             llm: &app.llm,
             renderer: &app.renderer,
             characters: &characters,
+            typesetting: &typesetting,
         };
 
         // 3. Run Engine (Synchronously for this request)

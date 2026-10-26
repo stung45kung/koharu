@@ -32,6 +32,7 @@ fn app_api() -> OpenApiRouter<ApiState> {
     OpenApiRouter::default()
         .merge(routes::history::router())
         .merge(routes::characters::router())
+        .merge(routes::typesetting::router())
         .merge(routes::pages::router())
         .merge(routes::projects::router())
         .merge(routes::config::router())

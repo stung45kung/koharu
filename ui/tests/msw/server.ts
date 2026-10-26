@@ -6,11 +6,13 @@ import { getDefaultMock } from '@/lib/api/default/default.msw'
 // Orval-generated handlers seed every endpoint with faker data. Individual
 // tests override specific routes via `server.use(http.get(...))`.
 //
-// `/characters` is served by a hand-written client (`lib/characters.ts`), so
-// it gets an explicit empty default here.
+// `/characters` and `/typesetting` are served by hand-written clients
+// (`lib/characters.ts`, `lib/typesetting.ts`), so they get explicit empty
+// defaults here.
 export const server = setupServer(
   ...getDefaultMock(),
   http.get('/api/v1/characters', () =>
     HttpResponse.json({ version: 1, characters: [], speakers: {} }),
   ),
+  http.get('/api/v1/typesetting', () => HttpResponse.json({})),
 )

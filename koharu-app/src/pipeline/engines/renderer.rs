@@ -69,16 +69,28 @@ impl Engine for Model {
             })
             .collect();
 
+        // Project font (from the project file) wins over the app-wide
+        // default font sent by the UI; per-block fonts win over both.
+        let document_font = ctx
+            .scene
+            .project
+            .style
+            .default_font
+            .clone()
+            .filter(|f| !f.trim().is_empty())
+            .or_else(|| ctx.options.default_font.clone());
+        let page_height = ctx.scene.page(ctx.page).map(|p| p.height).unwrap_or(h);
         let page_opts = PageRenderOptions {
             shader_effect: Default::default(),
             shader_stroke: None,
-            document_font: ctx.options.default_font.clone(),
+            document_font,
             target_language: ctx
                 .options
                 .target_language
                 .as_deref()
                 .map(render_target_language_tag),
             raster: Default::default(),
+            default_font_size: ctx.typesetting.font_size_for_page(page_height),
         };
 
         // `render_page` is synchronous and CPU-bound. It runs inline on the

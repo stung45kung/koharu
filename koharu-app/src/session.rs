@@ -11,6 +11,7 @@
 //!   `.khrproj/scene.bin`       — postcard-encoded `Snapshot { epoch, scene }`
 //!   `.khrproj/history.log`     — append-only `LogFrame { epoch, op }`
 //!   `.khrproj/characters.toml` — character profiles + speaker map (optional)
+//!   `.khrproj/typesetting.toml` — project default text size (optional)
 //!   `.khrproj/blobs/ab/cdef…`  — content-addressed blobs
 //!   `.khrproj/.lock`           — fs4 exclusive lock (session lifetime)
 
@@ -23,13 +24,14 @@ use atomicwrites::{AtomicFile, OverwriteBehavior};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::Utc;
 use fs4::FileExt;
-use koharu_core::{CharacterBook, Scene, op::Op};
+use koharu_core::{CharacterBook, Scene, TypesettingDefaults, op::Op};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::blobs::BlobStore;
 use crate::characters;
 use crate::history::{self, History};
+use crate::typesetting;
 
 const SCENE_FILE: &str = "scene.bin";
 const LOG_FILE: &str = "history.log";
@@ -53,6 +55,8 @@ pub struct ProjectSession {
     pub blobs: Arc<BlobStore>,
     /// Character profiles + text-node speakers, mirrored to `characters.toml`.
     characters: RwLock<CharacterBook>,
+    /// Project default text size, mirrored to `typesetting.toml`.
+    typesetting: RwLock<TypesettingDefaults>,
     /// Held for the lifetime of the session.
     _lock: File,
 }
@@ -116,6 +120,7 @@ impl ProjectSession {
 
         let history_obj = History::open(log_path.as_std_path(), epoch)?;
         let characters = RwLock::new(characters::load(&dir));
+        let typesetting = RwLock::new(typesetting::load(&dir));
 
         Ok(Arc::new(Self {
             dir,
@@ -123,6 +128,7 @@ impl ProjectSession {
             history: Mutex::new(history_obj),
             blobs,
             characters,
+            typesetting,
             _lock: lock,
         }))
     }
@@ -176,6 +182,20 @@ impl ProjectSession {
         characters::save(&self.dir, &next)?;
         *guard = next.clone();
         Ok((out, next))
+    }
+
+    // --- typesetting --------------------------------------------------------
+
+    pub fn typesetting(&self) -> TypesettingDefaults {
+        self.typesetting.read().clone()
+    }
+
+    /// Replace the typesetting defaults and persist them.
+    pub fn set_typesetting(&self, defaults: TypesettingDefaults) -> Result<()> {
+        let mut guard = self.typesetting.write();
+        typesetting::save(&self.dir, &defaults)?;
+        *guard = defaults;
+        Ok(())
     }
 
     // --- compaction --------------------------------------------------------

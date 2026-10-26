@@ -13,6 +13,7 @@ import {
 import { type ComponentType, useMemo, useRef, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ProjectTypesettingDefaults } from '@/components/panels/ProjectTypesettingDefaults'
 import { Button } from '@/components/ui/button'
 import { ColorPicker } from '@/components/ui/color-picker'
 import { FontSelect, useGoogleFontPreview } from '@/components/ui/font-select'
@@ -387,6 +388,12 @@ export function RenderControlsPanel() {
 
   return (
     <div className='flex w-full min-w-0 flex-col gap-2'>
+      <ProjectTypesettingDefaults
+        selectedFont={selectedNode?.data.style?.fontFamilies?.[0] ?? currentFontCandidate ?? undefined}
+        selectedFontSize={currentFontSize}
+        pageHeight={page?.height}
+        hasSelection={!!selectedNode}
+      />
       {/* Scope */}
       <div className='flex items-center justify-end'>
         <span

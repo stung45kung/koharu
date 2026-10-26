@@ -16,6 +16,7 @@ pub mod op;
 pub mod protocol;
 pub mod scene;
 pub mod style;
+pub mod typesetting;
 
 pub use blob::BlobRef;
 pub use characters::{Character, CharacterBook, CharacterId};
@@ -40,3 +41,4 @@ pub use scene::{
     ProjectMeta, ProjectStyle, Scene, TextData, Transform,
 };
 pub use style::{TextAlign, TextShaderEffect, TextStrokeStyle, TextStyle};
+pub use typesetting::TypesettingDefaults;

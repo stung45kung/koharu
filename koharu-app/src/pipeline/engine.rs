@@ -21,7 +21,9 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Result, bail};
 use async_trait::async_trait;
-use koharu_core::{CharacterBook, NodeId, Op, PageId, ReadingOrder, Region, Scene};
+use koharu_core::{
+    CharacterBook, NodeId, Op, PageId, ReadingOrder, Region, Scene, TypesettingDefaults,
+};
 use koharu_runtime::RuntimeManager;
 use parking_lot::RwLock;
 use petgraph::algo::toposort;
@@ -49,6 +51,8 @@ pub struct EngineCtx<'a> {
     pub renderer: &'a renderer::Renderer,
     /// Project character profiles + text-node speakers (may be empty).
     pub characters: &'a CharacterBook,
+    /// Project default text size (may be unset).
+    pub typesetting: &'a TypesettingDefaults,
 }
 
 /// Options threaded through a pipeline run.

@@ -58,6 +58,9 @@ pub struct PageRenderOptions {
     pub document_font: Option<String>,
     pub target_language: Option<String>,
     pub raster: RasterOptions,
+    /// Target text size for blocks without their own size: used when the
+    /// text fits, otherwise shrunk like auto-size. `None` = pure auto-size.
+    pub default_font_size: Option<f32>,
 }
 
 /// Per-block sprite output. `transform` becomes `TextData.sprite_transform`
@@ -189,6 +192,7 @@ impl Renderer {
                 opts.target_language.as_deref(),
                 opts.raster,
                 min_font,
+                opts.default_font_size,
             ) {
                 Ok(Some(out)) => rendered_blocks.push(out),
                 Ok(None) => {}
@@ -223,6 +227,7 @@ impl Renderer {
         target_language: Option<&str>,
         raster: RasterOptions,
         min_font_size: f32,
+        default_font_size: Option<f32>,
     ) -> Result<Option<RenderedBlock>> {
         let translation = block.translation.trim();
         if translation.is_empty() {
@@ -268,7 +273,12 @@ impl Renderer {
         if let Some(target_language) = target_language {
             layout_builder = layout_builder.with_hyphenation_language_tag(target_language);
         }
-        let max_font = max_font_size_for_box(layout_box, min_font_size);
+        let (min_font_size, max_font) = font_size_bounds(
+            style.font_size,
+            default_font_size,
+            layout_box,
+            min_font_size,
+        );
         let mut render_candidate = |layout: &LayoutRun<'_>| -> Result<RenderedTextCandidate> {
             let resolved_stroke = resolve_stroke_style(
                 block.font_prediction.as_ref(),
@@ -472,6 +482,24 @@ struct RenderedTextCandidate {
 struct MaskCollisionAttempt {
     candidate: RenderedTextCandidate,
     valid: bool,
+}
+
+/// `(min, max)` sizes for the fit search. With a project default size and
+/// no per-block size, the default becomes the ceiling (so every block that
+/// fits uses exactly that size) and the floor is lowered if needed so long
+/// text can still shrink below it.
+fn font_size_bounds(
+    block_size: Option<f32>,
+    default_size: Option<f32>,
+    layout_box: LayoutBox,
+    min_size: f32,
+) -> (f32, f32) {
+    match (block_size, default_size) {
+        (None, Some(target)) if target.is_finite() && target > 0.0 => {
+            (min_size.min(target), target)
+        }
+        _ => (min_size, max_font_size_for_box(layout_box, min_size)),
+    }
 }
 
 fn min_font_size_for_image(image_width: u32, image_height: u32) -> f32 {
@@ -1019,6 +1047,36 @@ mod tests {
     use super::*;
     use image::{GrayImage, Luma, Rgba, RgbaImage};
     use koharu_core::NodeId;
+
+    #[test]
+    fn project_default_size_caps_the_fit_search() {
+        let layout_box = LayoutBox {
+            x: 0.0,
+            y: 0.0,
+            width: 200.0,
+            height: 400.0,
+        };
+        // No defaults: unchanged auto-size bounds.
+        assert_eq!(
+            font_size_bounds(None, None, layout_box, 14.0),
+            (14.0, max_font_size_for_box(layout_box, 14.0))
+        );
+        // Project default: it is the ceiling.
+        assert_eq!(
+            font_size_bounds(None, Some(30.0), layout_box, 14.0),
+            (14.0, 30.0)
+        );
+        // A default below the page minimum lowers the floor too.
+        assert_eq!(
+            font_size_bounds(None, Some(10.0), layout_box, 14.0),
+            (10.0, 10.0)
+        );
+        // A per-block size ignores the project default.
+        assert_eq!(
+            font_size_bounds(Some(22.0), Some(30.0), layout_box, 14.0),
+            (14.0, max_font_size_for_box(layout_box, 14.0))
+        );
+    }
 
     #[test]
     fn default_font_families_should_fill_empty_list() {

@@ -1,6 +1,13 @@
 'use client'
 
-import { Languages, LoaderCircleIcon, Trash2Icon, UsersIcon } from 'lucide-react'
+import {
+  CheckCheckIcon,
+  Languages,
+  LoaderCircleIcon,
+  Trash2Icon,
+  UsersIcon,
+  WandSparklesIcon,
+} from 'lucide-react'
 import { motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -28,9 +35,12 @@ import { getConfig, startPipeline, useGetCurrentLlm } from '@/lib/api/default/de
 import { fetchApi } from '@/lib/api/fetch'
 import type { TextDataPatch } from '@/lib/api/schemas'
 import {
+  isSuggested,
   speakerOf,
   useAssignSpeaker,
   useCharacters,
+  useConfirmSpeakers,
+  useGuessSpeakers,
   type Character,
   type CharacterBook,
 } from '@/lib/characters'
@@ -65,6 +75,8 @@ export function TextBlocksPanel() {
   const setReadingOrder = useEditorUiStore((s) => s.setReadingOrder)
   const characterBook = useCharacters()
   const assignSpeaker = useAssignSpeaker()
+  const guess = useGuessSpeakers()
+  const confirm = useConfirmSpeakers()
   const [charactersOpen, setCharactersOpen] = useState(false)
 
   if (!page) {
@@ -102,6 +114,32 @@ export function TextBlocksPanel() {
       // multi-selection (shift/ctrl-click), otherwise just this block.
       const nodeIds = selectedIds.has(nodeId) ? Array.from(selectedIds) : [nodeId]
       await assignSpeaker.mutateAsync({ nodeIds, characterId })
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
+  const suggestedOnPage = textNodes
+    .map((n) => n.id)
+    .filter((id) => isSuggested(characterBook, id))
+
+  const guessPage = async () => {
+    try {
+      const result = await guess.mutateAsync({
+        pageId: page.id,
+        targetLanguage: useEditorUiStore.getState().selectedLanguage,
+      })
+      if (result.considered > 0 && result.assigned === 0) {
+        useEditorUiStore.getState().showError(t('characters.guessNoResult'))
+      }
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
+  const confirmPage = async () => {
+    try {
+      await confirm.mutateAsync(suggestedOnPage)
     } catch (err) {
       useEditorUiStore.getState().showError(String(err))
     }
@@ -150,6 +188,56 @@ export function TextBlocksPanel() {
               {t('characters.manage')}
             </TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                data-testid='textblocks-guess-speakers'
+                aria-label={t('characters.guess')}
+                variant='ghost'
+                size='icon-xs'
+                disabled={
+                  !llmReady ||
+                  isProcessing ||
+                  guess.isPending ||
+                  characterBook.characters.length === 0 ||
+                  textNodes.length === 0
+                }
+                onClick={() => void guessPage()}
+                className='size-5'
+              >
+                {guess.isPending ? (
+                  <LoaderCircleIcon className='size-3 animate-spin' />
+                ) : (
+                  <WandSparklesIcon className='size-3' />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side='bottom' sideOffset={4}>
+              {characterBook.characters.length === 0
+                ? t('characters.guessNeedsCharacters')
+                : t('characters.guess')}
+            </TooltipContent>
+          </Tooltip>
+          {suggestedOnPage.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  data-testid='textblocks-confirm-speakers'
+                  aria-label={t('characters.confirmPage')}
+                  variant='ghost'
+                  size='icon-xs'
+                  disabled={confirm.isPending}
+                  onClick={() => void confirmPage()}
+                  className='size-5 text-sky-500 hover:text-sky-500'
+                >
+                  <CheckCheckIcon className='size-3' />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side='bottom' sideOffset={4}>
+                {t('characters.confirmPage')} ({suggestedOnPage.length})
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
         <div className='flex items-center gap-1.5'>
           <span className='font-normal uppercase opacity-50'>{t('textBlocks.readingOrder')}:</span>
@@ -282,6 +370,7 @@ function BlockCard({
   const hasTranslation = !!data.translation?.trim()
   const preview = data.translation?.trim() || data.text?.trim()
   const speaker: Character | null = speakerOf(characterBook, node.id)
+  const guessed = speaker !== null && isSuggested(characterBook, node.id)
 
   return (
     <motion.div
@@ -331,10 +420,16 @@ function BlockCard({
             {speaker && (
               <span
                 data-testid={`textblock-speaker-chip-${index}`}
-                className='max-w-20 shrink-0 truncate rounded-sm bg-sky-500/70 px-1 py-0.5 text-[9px] font-medium text-white'
-                title={speaker.name}
+                data-suggested={guessed}
+                className={`max-w-20 shrink-0 truncate rounded-sm px-1 py-0.5 text-[9px] font-medium ${
+                  guessed
+                    ? 'border border-dashed border-sky-500 text-sky-600 dark:text-sky-300'
+                    : 'bg-sky-500/70 text-white'
+                }`}
+                title={guessed ? `${speaker.name} (${t('characters.suggestedHint')})` : speaker.name}
               >
                 {speaker.name}
+                {guessed && '?'}
               </span>
             )}
             {preview && (

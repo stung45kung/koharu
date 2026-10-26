@@ -123,4 +123,66 @@ describe('TextBlocksPanel', () => {
     await userEvent.click(await screen.findByTestId('textblocks-characters'))
     expect(await screen.findByTestId('characters-dialog')).toBeInTheDocument()
   })
+
+  it('guesses speakers for the page and marks them as suggested', async () => {
+    const guessRequests: unknown[] = []
+    let book = {
+      version: 1,
+      characters: [{ id: 'c1', name: 'Captain', description: '' }],
+      speakers: {} as Record<string, string>,
+      suggested: [] as string[],
+    }
+    server.use(
+      http.get('/api/v1/scene.json', () => HttpResponse.json(sceneWithTextNodes())),
+      http.get('/api/v1/llm/current', () =>
+        HttpResponse.json({ status: 'ready', target: null, error: null }),
+      ),
+      http.get('/api/v1/characters', () => HttpResponse.json(book)),
+      http.post('/api/v1/characters/guess', async ({ request }) => {
+        guessRequests.push(await request.json())
+        book = { ...book, speakers: { t1: 'c1' }, suggested: ['t1'] }
+        return HttpResponse.json({ book, considered: 2, assigned: 1 })
+      }),
+      http.post('/api/v1/characters/confirm', async ({ request }) => {
+        const body = (await request.json()) as { nodeIds: string[] }
+        book = { ...book, suggested: book.suggested.filter((n) => !body.nodeIds.includes(n)) }
+        return HttpResponse.json(book)
+      }),
+    )
+
+    renderWithQuery(<TextBlocksPanel />)
+
+    const guessButton = await screen.findByTestId('textblocks-guess-speakers')
+    await waitFor(() => expect(guessButton).not.toBeDisabled())
+    await userEvent.click(guessButton)
+
+    await waitFor(() => expect(guessRequests).toHaveLength(1))
+    expect(guessRequests[0]).toMatchObject({ pageId: 'p1', targetLanguage: 'en' })
+
+    const chip = await screen.findByTestId('textblock-speaker-chip-0')
+    expect(chip).toHaveAttribute('data-suggested', 'true')
+    expect(chip).toHaveTextContent('Captain?')
+
+    await userEvent.click(screen.getByTestId('textblocks-confirm-speakers'))
+    await waitFor(() =>
+      expect(screen.getByTestId('textblock-speaker-chip-0')).toHaveAttribute(
+        'data-suggested',
+        'false',
+      ),
+    )
+    expect(screen.queryByTestId('textblocks-confirm-speakers')).toBeNull()
+  })
+
+  it('disables guessing until characters exist', async () => {
+    server.use(
+      http.get('/api/v1/scene.json', () => HttpResponse.json(sceneWithTextNodes())),
+      http.get('/api/v1/llm/current', () =>
+        HttpResponse.json({ status: 'ready', target: null, error: null }),
+      ),
+    )
+
+    renderWithQuery(<TextBlocksPanel />)
+
+    expect(await screen.findByTestId('textblocks-guess-speakers')).toBeDisabled()
+  })
 })

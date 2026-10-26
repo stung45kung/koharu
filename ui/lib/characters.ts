@@ -20,12 +20,27 @@ export type CharacterBook = {
   characters: Character[]
   /** text node id → character id. Missing key = unknown speaker. */
   speakers: Record<string, string>
+  /** Nodes whose speaker was guessed automatically and not yet confirmed. */
+  suggested?: string[]
 }
 
-export const EMPTY_CHARACTER_BOOK: CharacterBook = { version: 1, characters: [], speakers: {} }
+export type GuessSpeakersResult = {
+  book: CharacterBook
+  considered: number
+  assigned: number
+}
+
+export const EMPTY_CHARACTER_BOOK: CharacterBook = {
+  version: 1,
+  characters: [],
+  speakers: {},
+  suggested: [],
+}
 
 export const CHARACTERS_URL = '/api/v1/characters'
 export const SPEAKERS_URL = '/api/v1/characters/speakers'
+export const GUESS_URL = '/api/v1/characters/guess'
+export const CONFIRM_URL = '/api/v1/characters/confirm'
 
 export const charactersQueryKey = [CHARACTERS_URL] as const
 
@@ -42,6 +57,12 @@ export const putCharacters = (characters: Character[]) =>
 
 export const putSpeakers = (nodeIds: string[], characterId: string | null) =>
   fetchApi<CharacterBook>(SPEAKERS_URL, jsonInit('PUT', { nodeIds, characterId }))
+
+export const guessSpeakers = (pageId: string, targetLanguage?: string) =>
+  fetchApi<GuessSpeakersResult>(GUESS_URL, jsonInit('POST', { pageId, targetLanguage }))
+
+export const confirmSpeakers = (nodeIds: string[]) =>
+  fetchApi<CharacterBook>(CONFIRM_URL, jsonInit('POST', { nodeIds }))
 
 /** Query for the open project's character book (disabled with no project). */
 export function useCharactersQuery() {
@@ -79,6 +100,22 @@ export function useAssignSpeaker() {
       putSpeakers(nodeIds, characterId),
     onSuccess: storeBook,
   })
+}
+
+export function useGuessSpeakers() {
+  return useMutation({
+    mutationFn: ({ pageId, targetLanguage }: { pageId: string; targetLanguage?: string }) =>
+      guessSpeakers(pageId, targetLanguage),
+    onSuccess: (result) => storeBook(result.book),
+  })
+}
+
+export function useConfirmSpeakers() {
+  return useMutation({ mutationFn: confirmSpeakers, onSuccess: storeBook })
+}
+
+export function isSuggested(book: CharacterBook, nodeId: string): boolean {
+  return book.suggested?.includes(nodeId) ?? false
 }
 
 export function speakerOf(book: CharacterBook, nodeId: string): Character | null {

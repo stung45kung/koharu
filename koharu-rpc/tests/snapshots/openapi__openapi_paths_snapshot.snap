@@ -41,6 +41,18 @@ expression: paths
         ],
     ),
     (
+        "/characters/confirm",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/characters/guess",
+        [
+            "post",
+        ],
+    ),
+    (
         "/characters/speakers",
         [
             "put",

@@ -74,6 +74,11 @@ pub struct CharacterBook {
     /// Text node → speaking character. Absent = unknown speaker.
     #[serde(default)]
     pub speakers: IndexMap<NodeId, CharacterId>,
+    /// Nodes in `speakers` whose speaker was guessed automatically and not
+    /// yet confirmed by the user. Guessing never overwrites a node that is
+    /// assigned but not listed here.
+    #[serde(default)]
+    pub suggested: Vec<NodeId>,
 }
 
 fn default_version() -> u32 {
@@ -86,6 +91,7 @@ impl Default for CharacterBook {
             version: CHARACTER_BOOK_VERSION,
             characters: Vec::new(),
             speakers: IndexMap::new(),
+            suggested: Vec::new(),
         }
     }
 }
@@ -111,6 +117,52 @@ impl CharacterBook {
         let alive: std::collections::HashSet<CharacterId> =
             self.characters.iter().map(|c| c.id).collect();
         self.speakers.retain(|_, id| alive.contains(id));
+        self.prune_suggested();
+    }
+
+    /// True when `node`'s speaker came from an unconfirmed guess.
+    pub fn is_suggested(&self, node: NodeId) -> bool {
+        self.suggested.contains(&node)
+    }
+
+    /// True when the user has not fixed `node`'s speaker: it is unknown, or
+    /// only guessed. Automatic guessing may (re)write these nodes only.
+    pub fn is_open_for_guess(&self, node: NodeId) -> bool {
+        !self.speakers.contains_key(&node) || self.is_suggested(node)
+    }
+
+    /// Record an automatic guess. Ignored for nodes the user has assigned
+    /// themselves. `None` clears a previous guess back to unknown.
+    /// Returns whether the node changed.
+    pub fn suggest(&mut self, node: NodeId, character: Option<CharacterId>) -> bool {
+        if !self.is_open_for_guess(node) {
+            return false;
+        }
+        match character {
+            Some(id) if self.character(id).is_some() => {
+                let changed = self.speakers.get(&node) != Some(&id) || !self.is_suggested(node);
+                self.speakers.insert(node, id);
+                if !self.is_suggested(node) {
+                    self.suggested.push(node);
+                }
+                changed
+            }
+            _ => {
+                let changed = self.speakers.shift_remove(&node).is_some();
+                self.suggested.retain(|n| *n != node);
+                changed
+            }
+        }
+    }
+
+    /// Turn guesses on `nodes` into confirmed assignments.
+    pub fn confirm(&mut self, nodes: &[NodeId]) {
+        self.suggested.retain(|n| !nodes.contains(n));
+    }
+
+    fn prune_suggested(&mut self) {
+        let speakers = &self.speakers;
+        self.suggested.retain(|n| speakers.contains_key(n));
     }
 
     /// Assign (or clear, with `None`) the speaker of several nodes at once.
@@ -135,7 +187,86 @@ impl CharacterBook {
                 }
             }
         }
+        // A manual choice (including "unknown") is a confirmed decision.
+        self.confirm(nodes);
         Ok(())
+    }
+
+    /// System prompt asking the model to label the speaker of each tagged
+    /// block (tag `[i + 1]` is `blocks[i]`). Characters are labelled `S1..Sn`
+    /// in book order; speakers the user already confirmed are given as
+    /// fixed context. `None` when there are no characters to choose from.
+    ///
+    /// Every LLM path appends the block-tag rules ("output the same tags
+    /// followed by the translated text"), so the task is phrased as a
+    /// "translation" of each block into its speaker label.
+    pub fn speaker_guess_prompt(&self, blocks: &[NodeId]) -> Option<String> {
+        if self.characters.is_empty() {
+            return None;
+        }
+        let mut out = String::new();
+        out.push_str(
+            "You are assisting a manga translator. Do NOT translate anything. Your only \
+             task is to decide which character speaks each numbered text block on this \
+             page. The blocks are given in reading order.\n\n\
+             Decide from how the line is spoken (self-reference, sentence endings, \
+             politeness level, tone), from what is said, and from the flow of the \
+             conversation. Use the character profiles below. If you are not reasonably \
+             sure, answer ? instead of guessing.\n\n\
+             For this task the \"translation\" of a block is ONLY its speaker label: \
+             after each tag write exactly one label (S1, S2, ... or ?) and nothing else.\n",
+        );
+        out.push_str("\nCharacters:\n");
+        for (i, c) in self.characters.iter().enumerate() {
+            let name = one_line(&c.name);
+            let desc = one_line(&truncate_chars(c.description.trim(), MAX_DESCRIPTION_CHARS));
+            if desc.is_empty() {
+                out.push_str(&format!("- S{}: {}\n", i + 1, name));
+            } else {
+                out.push_str(&format!("- S{}: {} — {}\n", i + 1, name, desc));
+            }
+        }
+        let known: Vec<String> = blocks
+            .iter()
+            .enumerate()
+            .filter(|(_, node)| !self.is_suggested(**node))
+            .filter_map(|(i, node)| {
+                let id = self.speakers.get(node)?;
+                let pos = self.characters.iter().position(|c| c.id == *id)?;
+                Some(format!("[{}] S{}", i + 1, pos + 1))
+            })
+            .collect();
+        if !known.is_empty() {
+            out.push_str("\nAlready confirmed by the user (keep these labels):\n");
+            out.push_str(&known.join("\n"));
+            out.push('\n');
+        }
+        Some(out.trim_end().to_string())
+    }
+
+    /// Map a label from the guess response (`S2`, `s2.`, `S2 (Name)`, or a
+    /// character's exact name) back to a character. `?`/anything else → None.
+    pub fn parse_speaker_label(&self, label: &str) -> Option<CharacterId> {
+        let label = label.trim().trim_matches(|c: char| c == '*' || c == '`');
+        if label.is_empty() {
+            return None;
+        }
+        let token: String = label
+            .split(|c: char| c.is_whitespace() || c == '(' || c == ':' || c == '-')
+            .next()
+            .unwrap_or("")
+            .trim_end_matches(['.', ',', ')'])
+            .to_string();
+        if let Some(num) = token.strip_prefix(['S', 's'])
+            && let Ok(n) = num.parse::<usize>()
+            && n >= 1
+        {
+            return self.characters.get(n - 1).map(|c| c.id);
+        }
+        self.characters
+            .iter()
+            .find(|c| c.name.trim().eq_ignore_ascii_case(label))
+            .map(|c| c.id)
     }
 
     /// Prompt section describing who speaks each tagged block, or `None`
@@ -307,6 +438,86 @@ mod tests {
         book.assign(&[node(1)], None).unwrap();
         assert!(book.speaker_of(node(1)).is_none());
         assert!(book.speaker_of(node(2)).is_some());
+    }
+
+    #[test]
+    fn guesses_never_override_user_choices() {
+        let mut book = book();
+        let (a, b) = (book.characters[0].id, book.characters[1].id);
+        book.assign(&[node(1)], Some(a)).unwrap();
+
+        assert!(
+            !book.suggest(node(1), Some(b)),
+            "confirmed node must not change"
+        );
+        assert_eq!(book.speaker_of(node(1)).map(|c| c.id), Some(a));
+
+        assert!(book.suggest(node(2), Some(b)));
+        assert!(book.is_suggested(node(2)));
+        // A later guess may revise an earlier guess, or clear it.
+        assert!(book.suggest(node(2), Some(a)));
+        assert!(book.suggest(node(2), None));
+        assert!(book.speaker_of(node(2)).is_none());
+        assert!(!book.is_suggested(node(2)));
+    }
+
+    #[test]
+    fn manual_assignment_and_confirm_clear_suggested_mark() {
+        let mut book = book();
+        let a = book.characters[0].id;
+        book.suggest(node(1), Some(a));
+        book.suggest(node(2), Some(a));
+        book.assign(&[node(1)], Some(a)).unwrap();
+        assert!(!book.is_suggested(node(1)));
+        book.confirm(&[node(2)]);
+        assert!(book.suggested.is_empty());
+        assert!(book.speaker_of(node(2)).is_some());
+    }
+
+    #[test]
+    fn deleting_character_drops_its_suggestions() {
+        let mut book = book();
+        let a = book.characters[0].id;
+        book.suggest(node(1), Some(a));
+        let keep = vec![book.characters[1].clone()];
+        book.set_characters(keep);
+        assert!(book.suggested.is_empty());
+    }
+
+    #[test]
+    fn guess_prompt_lists_characters_and_confirmed_hints() {
+        let mut book = book();
+        let a = book.characters[0].id;
+        assert_eq!(
+            CharacterBook::default().speaker_guess_prompt(&[node(1)]),
+            None
+        );
+
+        book.assign(&[node(2)], Some(a)).unwrap();
+        book.suggest(node(3), Some(a));
+        let prompt = book
+            .speaker_guess_prompt(&[node(1), node(2), node(3)])
+            .unwrap();
+        assert!(prompt.contains("- S1: Akazukin"));
+        assert!(prompt.contains("- S2: ผู้บรรยาย"));
+        assert!(prompt.contains("[2] S1"));
+        // Unconfirmed guesses are not presented as fixed context.
+        assert!(!prompt.contains("[3] S1"));
+    }
+
+    #[test]
+    fn parses_speaker_labels_leniently() {
+        let book = book();
+        let (a, b) = (book.characters[0].id, book.characters[1].id);
+        assert_eq!(book.parse_speaker_label("S1"), Some(a));
+        assert_eq!(book.parse_speaker_label(" s2. "), Some(b));
+        assert_eq!(book.parse_speaker_label("S1 (Akazukin)"), Some(a));
+        assert_eq!(book.parse_speaker_label("**S2**"), Some(b));
+        assert_eq!(book.parse_speaker_label("akazukin"), Some(a));
+        assert_eq!(book.parse_speaker_label("?"), None);
+        assert_eq!(book.parse_speaker_label("S9"), None);
+        assert_eq!(book.parse_speaker_label("S0"), None);
+        assert_eq!(book.parse_speaker_label(""), None);
     }
 
     #[test]

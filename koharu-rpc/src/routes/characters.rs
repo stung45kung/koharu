@@ -3,6 +3,8 @@
 //! - `GET /characters`          — the whole book
 //! - `PUT /characters`          — replace the character list
 //! - `PUT /characters/speakers` — set/clear the speaker of some text nodes
+//! - `POST /characters/guess`    — let the LLM suggest speakers for a page
+//! - `POST /characters/confirm`  — accept suggested speakers
 //!
 //! Every mutation returns the updated book. Stored in
 //! `.khrproj/characters.toml`, outside the undo history.
@@ -11,7 +13,8 @@ use std::collections::HashSet;
 
 use axum::Json;
 use axum::extract::State;
-use koharu_core::{Character, CharacterBook, CharacterId, NodeId};
+use koharu_app::speaker_guess;
+use koharu_core::{Character, CharacterBook, CharacterId, NodeId, PageId};
 use serde::{Deserialize, Serialize};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
@@ -25,6 +28,32 @@ pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::default()
         .routes(routes!(get_characters, put_characters))
         .routes(routes!(put_speakers))
+        .routes(routes!(guess_speakers))
+        .routes(routes!(confirm_speakers))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GuessSpeakersRequest {
+    pub page_id: PageId,
+    #[serde(default)]
+    pub target_language: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GuessSpeakersResponse {
+    pub book: CharacterBook,
+    /// Blocks that were open for guessing (unknown or previously guessed).
+    pub considered: usize,
+    /// Blocks that received a new or changed suggestion.
+    pub assigned: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfirmSpeakersRequest {
+    pub node_ids: Vec<NodeId>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -94,6 +123,64 @@ async fn put_speakers(
     let (_, book) = session
         .update_characters(|book| {
             book.assign(&req.node_ids, req.character_id)?;
+            Ok(())
+        })
+        .map_err(ApiError::internal)?;
+    Ok(Json(book))
+}
+
+#[utoipa::path(
+    post,
+    path = "/characters/guess",
+    request_body = GuessSpeakersRequest,
+    responses((status = 200, body = GuessSpeakersResponse))
+)]
+async fn guess_speakers(
+    State(app): State<AppState>,
+    Json(req): Json<GuessSpeakersRequest>,
+) -> ApiResult<Json<GuessSpeakersResponse>> {
+    let session = app
+        .current_session()
+        .ok_or_else(|| ApiError::bad_request("no project open"))?;
+    if session.characters().characters.is_empty() {
+        return Err(ApiError::bad_request(
+            "add characters before guessing speakers",
+        ));
+    }
+    if !app.llm.ready().await {
+        return Err(ApiError::bad_request("no LLM loaded"));
+    }
+    let outcome = speaker_guess::guess_page_speakers(
+        &session,
+        &app.llm,
+        req.page_id,
+        req.target_language.as_deref(),
+    )
+    .await
+    .map_err(ApiError::internal)?;
+    Ok(Json(GuessSpeakersResponse {
+        book: session.characters(),
+        considered: outcome.considered,
+        assigned: outcome.assigned,
+    }))
+}
+
+#[utoipa::path(
+    post,
+    path = "/characters/confirm",
+    request_body = ConfirmSpeakersRequest,
+    responses((status = 200, body = CharacterBook))
+)]
+async fn confirm_speakers(
+    State(app): State<AppState>,
+    Json(req): Json<ConfirmSpeakersRequest>,
+) -> ApiResult<Json<CharacterBook>> {
+    let session = app
+        .current_session()
+        .ok_or_else(|| ApiError::bad_request("no project open"))?;
+    let (_, book) = session
+        .update_characters(|book| {
+            book.confirm(&req.node_ids);
             Ok(())
         })
         .map_err(ApiError::internal)?;

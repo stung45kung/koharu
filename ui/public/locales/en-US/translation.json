@@ -476,6 +476,11 @@
     "unknownSpeaker": "Unknown speaker",
     "unnamed": "(unnamed)",
     "selectPrompt": "Select a character on the left, or add one.",
-    "deleteWarning": "Used by {{count}} blocks. Deleting this character makes them unknown speaker."
+    "deleteWarning": "Used by {{count}} blocks. Deleting this character makes them unknown speaker.",
+    "guess": "Guess speakers for this page",
+    "guessNeedsCharacters": "Add characters first to guess speakers",
+    "guessNoResult": "The model couldn't tell who speaks. Try a cloud LLM or add more detail to the profiles.",
+    "confirmPage": "Confirm guessed speakers on this page",
+    "suggestedHint": "guessed — pick it in the list or confirm the page to accept"
   }
 }

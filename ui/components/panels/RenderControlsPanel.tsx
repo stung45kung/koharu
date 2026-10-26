@@ -335,6 +335,23 @@ export function RenderControlsPanel() {
     return true
   }
 
+  const currentRotation = selectedNode?.transform.rotationDeg ?? 0
+
+  /** Set the rotation (degrees, clockwise) of every selected block. */
+  const applyRotationToSelected = (deg: number) => {
+    if (!page || selectedNodes.length === 0) return
+    let angle = ((deg % 360) + 360) % 360
+    if (angle > 180) angle -= 360
+    angle = Math.round(angle * 10) / 10
+    const opsList = selectedNodes.map((n) =>
+      ops.updateNode(page.id, n.id, { transform: { ...n.transform, rotationDeg: angle } }),
+    )
+    void (async () => {
+      await applyOp(opsList.length === 1 ? opsList[0] : ops.batch('Rotate blocks', opsList))
+      queueAutoRender(page.id)
+    })()
+  }
+
   const applyStyleToAll = (updates: Partial<TextStyle>) => {
     applyStyleToNodes(textNodes, updates, 'Bulk style update')
   }
@@ -695,6 +712,64 @@ export function RenderControlsPanel() {
               </Tooltip>
             )
           })}
+        </div>
+      </div>
+
+      {/* Rotation */}
+      <div className='flex flex-col gap-0.5'>
+        <span className='text-[10px] font-medium text-muted-foreground uppercase'>
+          {t('render.rotationLabel')}
+        </span>
+        <div className='flex items-center gap-1'>
+          <div className='flex min-w-0 flex-1 items-center rounded-md border border-input bg-background shadow-xs'>
+            <Button
+              type='button'
+              variant='ghost'
+              size='icon-sm'
+              className='size-6 shrink-0 rounded-r-none border-r'
+              disabled={selectedNodes.length === 0}
+              onClick={() => applyRotationToSelected(currentRotation - 5)}
+            >
+              <MinusIcon className='size-3' />
+            </Button>
+            <Input
+              type='number'
+              step='1'
+              min='-180'
+              max='180'
+              className='h-6 min-w-0 flex-1 [appearance:textfield] rounded-none border-0 px-0.5 text-center text-xs shadow-none focus-visible:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+              data-testid='render-rotation'
+              disabled={selectedNodes.length === 0}
+              value={selectedNodes.length > 0 ? Math.round(currentRotation * 10) / 10 : ''}
+              placeholder='0'
+              onChange={(event) => {
+                const parsed = Number.parseFloat(event.target.value)
+                if (!Number.isFinite(parsed)) return
+                applyRotationToSelected(parsed)
+              }}
+            />
+            <Button
+              type='button'
+              variant='ghost'
+              size='icon-sm'
+              className='size-6 shrink-0 rounded-l-none border-l'
+              disabled={selectedNodes.length === 0}
+              onClick={() => applyRotationToSelected(currentRotation + 5)}
+            >
+              <PlusIcon className='size-3' />
+            </Button>
+          </div>
+          <Button
+            type='button'
+            variant='ghost'
+            size='xs'
+            className='text-[11px]'
+            data-testid='render-rotation-reset'
+            disabled={selectedNodes.length === 0 || currentRotation === 0}
+            onClick={() => applyRotationToSelected(0)}
+          >
+            0°
+          </Button>
         </div>
       </div>
 

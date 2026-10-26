@@ -139,15 +139,47 @@ function TextBlockItem({
   const edgeRef = useRef<ResizeEdge | null>(null)
   const isResizeRef = useRef(false)
 
-  const setBox = (x: number, y: number, w: number, h: number) => {
+  const t = node.transform
+  const rotation = t.rotationDeg ?? 0
+
+  const setBox = (x: number, y: number, w: number, h: number, deg: number = rotation) => {
     const el = boxRef.current
     if (!el) return
-    el.style.transform = `translate(${x}px, ${y}px)`
+    el.style.transform = `translate(${x}px, ${y}px) rotate(${deg}deg)`
     el.style.width = `${w}px`
     el.style.height = `${h}px`
   }
 
-  const t = node.transform
+  // Drag the round handle above the box to rotate it (Shift snaps to 15°).
+  const handleRotatePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!interactive || !selected) return
+    event.stopPropagation()
+    event.preventDefault()
+    const el = boxRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const cx = rect.left + rect.width / 2
+    const cy = rect.top + rect.height / 2
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    let angle = rotation
+
+    const onMove = (ev: PointerEvent) => {
+      angle = rotationFromPointer(ev.clientX - cx, ev.clientY - cy, ev.shiftKey)
+      setBox(t.x * scale, t.y * scale, t.width * scale, t.height * scale, angle)
+    }
+    const finish = () => {
+      handle.removeEventListener('pointermove', onMove)
+      handle.removeEventListener('pointerup', finish)
+      handle.removeEventListener('pointercancel', finish)
+      if (angle !== rotation) {
+        onCommit({ x: t.x, y: t.y, width: t.width, height: t.height, rotationDeg: angle })
+      }
+    }
+    handle.addEventListener('pointermove', onMove)
+    handle.addEventListener('pointerup', finish)
+    handle.addEventListener('pointercancel', finish)
+  }
 
   const bind = useDrag(
     ({ first, last, movement: [mx, my], event, tap }) => {
@@ -240,7 +272,8 @@ function TextBlockItem({
         position: 'absolute',
         top: 0,
         left: 0,
-        transform: `translate(${t.x * scale}px, ${t.y * scale}px)`,
+        transform: `translate(${t.x * scale}px, ${t.y * scale}px) rotate(${rotation}deg)`,
+        transformOrigin: 'center center',
         width: w,
         height: h,
         pointerEvents: interactive ? 'auto' : 'none',
@@ -264,8 +297,46 @@ function TextBlockItem({
         {index + 1}
       </div>
       {selected && interactive && <ResizeHandles onEdgePointerDown={handleEdgePointerDown} />}
+      {selected && interactive && (
+        <>
+          <div
+            className='pointer-events-none absolute left-1/2 w-px -translate-x-1/2 bg-primary'
+            style={{ top: -ROTATE_HANDLE_OFFSET, height: ROTATE_HANDLE_OFFSET }}
+          />
+          <div
+            data-testid={`textblock-rotate-handle-${index}`}
+            title={`${Math.round(rotation)}°`}
+            onPointerDown={handleRotatePointerDown}
+            className='absolute left-1/2 -translate-x-1/2 rounded-full border-2 border-primary bg-background shadow'
+            style={{
+              top: -ROTATE_HANDLE_OFFSET - ROTATE_HANDLE_SIZE / 2,
+              width: ROTATE_HANDLE_SIZE,
+              height: ROTATE_HANDLE_SIZE,
+              cursor: 'grab',
+              zIndex: 31,
+              touchAction: 'none',
+            }}
+          />
+        </>
+      )}
     </div>
   )
+}
+
+const ROTATE_HANDLE_SIZE = 12
+const ROTATE_HANDLE_OFFSET = 22
+
+/**
+ * Angle (degrees, clockwise, 0 = handle straight above the centre) for a
+ * pointer at (dx, dy) from the box centre, in (-180, 180]. `snap` rounds to
+ * 15° steps.
+ */
+export function rotationFromPointer(dx: number, dy: number, snap: boolean): number {
+  let deg = (Math.atan2(dy, dx) * 180) / Math.PI + 90
+  if (snap) deg = Math.round(deg / 15) * 15
+  deg = ((deg % 360) + 360) % 360
+  if (deg > 180) deg -= 360
+  return Math.round(deg * 10) / 10
 }
 
 function BlockSprite({ node, scale }: { node: TextNodeEntry; scale: number }) {

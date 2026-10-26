@@ -259,7 +259,8 @@
     "fontStyles": {
       "italicWithName": "{{name}} Italic",
       "regularItalic": "Regular Italic"
-    }
+    },
+    "rotationLabel": "Rotation (°)"
   },
   "textBlocks": {
     "emptyPrompt": "Open an image to see text blocks.",

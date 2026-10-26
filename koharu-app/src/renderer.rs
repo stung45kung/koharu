@@ -349,6 +349,7 @@ impl Renderer {
                 bubble_id,
                 &mut render_candidate,
             )?;
+            let candidate = rotate_candidate(candidate, block.transform.rotation_deg);
             return Ok(Some(RenderedBlock {
                 node_id: block.node_id,
                 sprite: DynamicImage::ImageRgba8(candidate.image),
@@ -368,6 +369,7 @@ impl Renderer {
         )?;
 
         let candidate = render_candidate(&layout)?;
+        let candidate = rotate_candidate(candidate, block.transform.rotation_deg);
 
         Ok(Some(RenderedBlock {
             node_id: block.node_id,
@@ -1108,6 +1110,114 @@ fn rendered_direction_for_writing_mode(writing_mode: WritingMode) -> TextDirecti
 // Helpers: placement
 // ---------------------------------------------------------------------------
 
+/// Rotate a rendered block clockwise by `rotation_deg` about its centre.
+/// Text is laid out upright in the block's box first, so line breaks and
+/// size don't change with the angle; the finished sprite is then rotated
+/// into a canvas large enough for its corners, keeping the same centre.
+fn rotate_candidate(candidate: RenderedTextCandidate, rotation_deg: f32) -> RenderedTextCandidate {
+    let angle = normalize_degrees(rotation_deg);
+    if angle.abs() < 0.01 || !angle.is_finite() {
+        return candidate;
+    }
+    let rotated = rotate_rgba(&candidate.image, angle);
+    let t = candidate.transform;
+    let cx = t.x + t.width * 0.5;
+    let cy = t.y + t.height * 0.5;
+    let (w, h) = (rotated.width() as f32, rotated.height() as f32);
+    RenderedTextCandidate {
+        image: rotated,
+        transform: Transform {
+            x: (cx - w * 0.5).round(),
+            y: (cy - h * 0.5).round(),
+            width: w,
+            height: h,
+            rotation_deg: angle,
+        },
+    }
+}
+
+/// Map any angle to (-180, 180].
+fn normalize_degrees(deg: f32) -> f32 {
+    let mut d = deg % 360.0;
+    if d > 180.0 {
+        d -= 360.0;
+    } else if d <= -180.0 {
+        d += 360.0;
+    }
+    d
+}
+
+/// Clockwise rotation (screen coordinates, y down) into an expanded canvas.
+/// Bilinear sampling on premultiplied alpha so glyph edges don't pick up
+/// dark fringes from transparent pixels.
+fn rotate_rgba(src: &RgbaImage, deg: f32) -> RgbaImage {
+    let (sin, cos) = deg.to_radians().sin_cos();
+    let (w, h) = (src.width() as f32, src.height() as f32);
+    // Small tolerance so float noise (cos 90° ≈ 4e-8) doesn't add a pixel.
+    let out_w = (w * cos.abs() + h * sin.abs() - 1e-3).ceil().max(1.0) as u32;
+    let out_h = (w * sin.abs() + h * cos.abs() - 1e-3).ceil().max(1.0) as u32;
+    let (src_cx, src_cy) = (w * 0.5, h * 0.5);
+    let (out_cx, out_cy) = (out_w as f32 * 0.5, out_h as f32 * 0.5);
+    let mut out = RgbaImage::new(out_w, out_h);
+
+    // Premultiplied source pixel (zero outside the image).
+    let fetch = |x: i64, y: i64| -> [f32; 4] {
+        if x < 0 || y < 0 || x >= src.width() as i64 || y >= src.height() as i64 {
+            return [0.0; 4];
+        }
+        let p = src.get_pixel(x as u32, y as u32).0;
+        let a = p[3] as f32 / 255.0;
+        [
+            p[0] as f32 * a,
+            p[1] as f32 * a,
+            p[2] as f32 * a,
+            p[3] as f32,
+        ]
+    };
+
+    for oy in 0..out_h {
+        for ox in 0..out_w {
+            // Inverse-rotate the destination pixel centre into the source.
+            let dx = ox as f32 + 0.5 - out_cx;
+            let dy = oy as f32 + 0.5 - out_cy;
+            let sx = dx * cos + dy * sin + src_cx - 0.5;
+            let sy = -dx * sin + dy * cos + src_cy - 0.5;
+            if sx < -1.0 || sy < -1.0 || sx > w || sy > h {
+                continue;
+            }
+            let (x0, y0) = (sx.floor(), sy.floor());
+            let (fx, fy) = (sx - x0, sy - y0);
+            let (x0, y0) = (x0 as i64, y0 as i64);
+            let p00 = fetch(x0, y0);
+            let p10 = fetch(x0 + 1, y0);
+            let p01 = fetch(x0, y0 + 1);
+            let p11 = fetch(x0 + 1, y0 + 1);
+            let mut px = [0.0f32; 4];
+            for c in 0..4 {
+                let top = p00[c] * (1.0 - fx) + p10[c] * fx;
+                let bottom = p01[c] * (1.0 - fx) + p11[c] * fx;
+                px[c] = top * (1.0 - fy) + bottom * fy;
+            }
+            let alpha = px[3];
+            if alpha <= 0.0 {
+                continue;
+            }
+            let unpremultiply = |v: f32| (v / (alpha / 255.0)).round().clamp(0.0, 255.0) as u8;
+            out.put_pixel(
+                ox,
+                oy,
+                image::Rgba([
+                    unpremultiply(px[0]),
+                    unpremultiply(px[1]),
+                    unpremultiply(px[2]),
+                    alpha.round().clamp(0.0, 255.0) as u8,
+                ]),
+            );
+        }
+    }
+    out
+}
+
 fn centred_sprite_transform(
     anchor_box: LayoutBox,
     sprite_width: u32,
@@ -1159,6 +1269,65 @@ mod tests {
         assert_eq!(fixed_font_size(Some(40.0), Some(28.0), false), Some(40.0));
         assert_eq!(fixed_font_size(None, None, false), None);
         assert_eq!(fixed_font_size(None, Some(f32::NAN), false), None);
+    }
+
+    #[test]
+    fn normalizes_angles_into_half_open_range() {
+        assert_eq!(normalize_degrees(0.0), 0.0);
+        assert_eq!(normalize_degrees(370.0), 10.0);
+        assert_eq!(normalize_degrees(-190.0), 170.0);
+        assert_eq!(normalize_degrees(180.0), 180.0);
+        assert_eq!(normalize_degrees(-180.0), 180.0);
+    }
+
+    #[test]
+    fn rotating_90_degrees_swaps_size_and_turns_clockwise() {
+        // 4x2 image: left half red, right half blue.
+        let mut img = RgbaImage::new(4, 2);
+        for y in 0..2 {
+            for x in 0..4 {
+                let c = if x < 2 {
+                    [255, 0, 0, 255]
+                } else {
+                    [0, 0, 255, 255]
+                };
+                img.put_pixel(x, y, Rgba(c));
+            }
+        }
+        let out = rotate_rgba(&img, 90.0);
+        assert_eq!((out.width(), out.height()), (2, 4));
+        // Clockwise: the left (red) end ends up on top.
+        assert_eq!(out.get_pixel(1, 0).0, [255, 0, 0, 255]);
+        assert_eq!(out.get_pixel(0, 3).0, [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn rotated_candidate_keeps_its_centre() {
+        let candidate = RenderedTextCandidate {
+            image: RgbaImage::from_pixel(100, 20, Rgba([0, 0, 0, 255])),
+            transform: Transform {
+                x: 50.0,
+                y: 40.0,
+                width: 100.0,
+                height: 20.0,
+                rotation_deg: 0.0,
+            },
+        };
+        let out = rotate_candidate(candidate, 30.0);
+        let t = out.transform;
+        assert!((t.x + t.width / 2.0 - 100.0).abs() <= 1.0);
+        assert!((t.y + t.height / 2.0 - 50.0).abs() <= 1.0);
+        assert!(t.width < 100.0 && t.height > 20.0);
+        assert_eq!(t.rotation_deg, 30.0);
+        // No rotation is a no-op.
+        let same = rotate_candidate(
+            RenderedTextCandidate {
+                image: RgbaImage::new(3, 3),
+                transform: Transform::default(),
+            },
+            360.0,
+        );
+        assert_eq!((same.image.width(), same.image.height()), (3, 3));
     }
 
     #[test]

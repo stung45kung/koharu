@@ -1,6 +1,7 @@
 'use client'
 
-import { BookmarkIcon, XIcon } from 'lucide-react'
+import { BookmarkIcon, ChevronDownIcon, ChevronRightIcon, XIcon } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -30,6 +31,24 @@ const toHex = (c: number[]) =>
     .map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'))
     .join('')
 
+const COLLAPSED_KEY = 'koharu.projectDefaults.collapsed'
+
+function readCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeCollapsed(value: boolean) {
+  try {
+    window.localStorage.setItem(COLLAPSED_KEY, value ? '1' : '0')
+  } catch {
+    // Storage unavailable: the section just won't remember its state.
+  }
+}
+
 /**
  * Project-wide typesetting defaults: tune one block, then save its font and
  * size as the project default. Other pages scale the size by their height.
@@ -46,6 +65,13 @@ export function ProjectTypesettingDefaults({
   const { scene } = useScene()
   const typesetting = useTypesetting()
   const save = useSaveTypesetting()
+  const [collapsed, setCollapsed] = useState(readCollapsed)
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      writeCollapsed(!prev)
+      return !prev
+    })
+  }
 
   const projectFont = scene?.project?.style?.defaultFont ?? null
   const sizeHere = pageHeight ? defaultSizeForPage(typesetting, pageHeight) : null
@@ -97,9 +123,33 @@ export function ProjectTypesettingDefaults({
       className='flex flex-col gap-1.5 rounded-md p-2 ring-1 ring-border'
       data-testid='project-typesetting'
     >
-      <span className='text-[10px] font-medium text-muted-foreground uppercase'>
-        {t('typesetting.title')}
-      </span>
+      <button
+        type='button'
+        data-testid='project-typesetting-toggle'
+        aria-expanded={!collapsed}
+        onClick={toggleCollapsed}
+        className='flex w-full items-center gap-1 text-left text-[10px] font-medium text-muted-foreground uppercase hover:text-foreground'
+      >
+        {collapsed ? (
+          <ChevronRightIcon className='size-3' />
+        ) : (
+          <ChevronDownIcon className='size-3' />
+        )}
+        <span>{t('typesetting.title')}</span>
+        {collapsed && hasDefaults && (
+          <span className='ml-auto truncate font-normal normal-case'>
+            {[
+              projectFont,
+              typesetting.fontSizePx ? `${Math.round(typesetting.fontSizePx)}px` : null,
+              projectColor ? toHex(projectColor) : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          </span>
+        )}
+      </button>
+      {!collapsed && (
+        <>
       <div className='grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs'>
         <span className='text-muted-foreground'>{t('typesetting.font')}</span>
         <span className='truncate' data-testid='project-typesetting-font'>
@@ -173,6 +223,8 @@ export function ProjectTypesettingDefaults({
           ? t('typesetting.hintNoSize')
           : t('typesetting.hint')}
       </p>
+        </>
+      )}
     </div>
   )
 }

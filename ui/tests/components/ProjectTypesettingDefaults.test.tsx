@@ -69,6 +69,17 @@ describe('ProjectTypesettingDefaults', () => {
     })
   })
 
+  it('collapses and expands', async () => {
+    renderWithQuery(<ProjectTypesettingDefaults hasSelection={false} pageHeight={1000} />)
+    const toggle = await screen.findByTestId('project-typesetting-toggle')
+    expect(screen.getByTestId('project-typesetting-save')).toBeInTheDocument()
+    await userEvent.click(toggle)
+    expect(screen.queryByTestId('project-typesetting-save')).toBeNull()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(toggle)
+    expect(screen.getByTestId('project-typesetting-save')).toBeInTheDocument()
+  })
+
   it('disables saving without a selection', async () => {
     renderWithQuery(<ProjectTypesettingDefaults hasSelection={false} pageHeight={1000} />)
     expect(await screen.findByTestId('project-typesetting-save')).toBeDisabled()

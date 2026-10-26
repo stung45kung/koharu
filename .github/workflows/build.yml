@@ -16,7 +16,10 @@ jobs:
     name: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [macos-latest, windows-2022, ubuntu-latest, ubuntu-24.04-arm]
+        # Fork: Windows only (the only platform used here). Restore the full
+        # matrix (macos-latest, windows-2022, ubuntu-latest, ubuntu-24.04-arm)
+        # before proposing anything upstream.
+        os: [windows-2022]
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:

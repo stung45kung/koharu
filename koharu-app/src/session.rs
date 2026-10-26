@@ -12,6 +12,7 @@
 //!   `.khrproj/history.log`     — append-only `LogFrame { epoch, op }`
 //!   `.khrproj/characters.toml` — character profiles + speaker map (optional)
 //!   `.khrproj/typesetting.toml` — project default text size (optional)
+//!   `.khrproj/glossary.toml`    — fixed term translations (optional)
 //!   `.khrproj/blobs/ab/cdef…`  — content-addressed blobs
 //!   `.khrproj/.lock`           — fs4 exclusive lock (session lifetime)
 
@@ -24,12 +25,13 @@ use atomicwrites::{AtomicFile, OverwriteBehavior};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::Utc;
 use fs4::FileExt;
-use koharu_core::{CharacterBook, Scene, TypesettingDefaults, op::Op};
+use koharu_core::{CharacterBook, Glossary, Scene, TypesettingDefaults, op::Op};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::blobs::BlobStore;
 use crate::characters;
+use crate::glossary;
 use crate::history::{self, History};
 use crate::typesetting;
 
@@ -57,6 +59,8 @@ pub struct ProjectSession {
     characters: RwLock<CharacterBook>,
     /// Project default text size, mirrored to `typesetting.toml`.
     typesetting: RwLock<TypesettingDefaults>,
+    /// Project glossary, mirrored to `glossary.toml`.
+    glossary: RwLock<Glossary>,
     /// Held for the lifetime of the session.
     _lock: File,
 }
@@ -121,6 +125,7 @@ impl ProjectSession {
         let history_obj = History::open(log_path.as_std_path(), epoch)?;
         let characters = RwLock::new(characters::load(&dir));
         let typesetting = RwLock::new(typesetting::load(&dir));
+        let glossary = RwLock::new(glossary::load(&dir));
 
         Ok(Arc::new(Self {
             dir,
@@ -129,6 +134,7 @@ impl ProjectSession {
             blobs,
             characters,
             typesetting,
+            glossary,
             _lock: lock,
         }))
     }
@@ -195,6 +201,20 @@ impl ProjectSession {
         let mut guard = self.typesetting.write();
         typesetting::save(&self.dir, &defaults)?;
         *guard = defaults;
+        Ok(())
+    }
+
+    // --- glossary -----------------------------------------------------------
+
+    pub fn glossary(&self) -> Glossary {
+        self.glossary.read().clone()
+    }
+
+    /// Replace the glossary and persist it.
+    pub fn set_glossary(&self, glossary: Glossary) -> Result<()> {
+        let mut guard = self.glossary.write();
+        glossary::save(&self.dir, &glossary)?;
+        *guard = glossary;
         Ok(())
     }
 

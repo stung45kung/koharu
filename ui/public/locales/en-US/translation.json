@@ -504,5 +504,17 @@
     "color": "Color",
     "notSetColor": "not set (detected from source)",
     "shrinkToFit": "Shrink long text to fit its box (off = always this size)"
+  },
+  "glossary": {
+    "button": "Glossary",
+    "title": "Glossary",
+    "description": "Fixed translations for names and terms. When a page is translated, terms that appear in its text are sent to the model with the translation it must use.",
+    "source": "Source term",
+    "target": "Translation",
+    "note": "Note (optional)",
+    "notePlaceholder": "e.g. heroine's nickname",
+    "empty": "No terms yet. Add names, places, honorifics or catchphrases that must always be translated the same way.",
+    "add": "Add term",
+    "delete": "Delete term"
   }
 }

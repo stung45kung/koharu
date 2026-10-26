@@ -7,6 +7,7 @@ pub mod characters;
 pub mod config;
 pub mod downloads;
 pub mod fonts;
+pub mod glossary;
 pub mod history;
 pub mod llm;
 pub mod meta;

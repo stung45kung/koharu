@@ -29,6 +29,7 @@ impl Engine for Model {
         // exact nodes being sent (works for single-block and reordered runs).
         let node_ids: Vec<NodeId> = targets.iter().map(|(id, _)| *id).collect();
         let sections: Vec<String> = [
+            ctx.session.glossary().prompt_section(&sources),
             ctx.characters.speaker_prompt_section(&node_ids),
             previous_page_context(ctx.scene, ctx.page, ctx.characters),
         ]

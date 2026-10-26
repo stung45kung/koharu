@@ -15,6 +15,7 @@ pub mod blobs;
 pub mod bus;
 pub mod characters;
 pub mod config;
+pub mod glossary;
 pub mod google_fonts;
 pub mod history;
 pub mod llm;

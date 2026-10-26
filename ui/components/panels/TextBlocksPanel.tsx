@@ -1,6 +1,7 @@
 'use client'
 
 import {
+  BookOpenIcon,
   CheckCheckIcon,
   Languages,
   LoaderCircleIcon,
@@ -13,6 +14,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CharacterManagerDialog } from '@/components/CharacterManagerDialog'
+import { GlossaryDialog } from '@/components/GlossaryDialog'
 import {
   Accordion,
   AccordionContent,
@@ -78,6 +80,7 @@ export function TextBlocksPanel() {
   const guess = useGuessSpeakers()
   const confirm = useConfirmSpeakers()
   const [charactersOpen, setCharactersOpen] = useState(false)
+  const [glossaryOpen, setGlossaryOpen] = useState(false)
 
   if (!page) {
     return (
@@ -238,6 +241,16 @@ export function TextBlocksPanel() {
           {t('characters.manageShort')}
         </Button>
         <Button
+          data-testid='textblocks-glossary'
+          variant='ghost'
+          size='xs'
+          onClick={() => setGlossaryOpen(true)}
+          className='text-[11px]'
+        >
+          <BookOpenIcon className='size-3' />
+          {t('glossary.button')}
+        </Button>
+        <Button
           data-testid='textblocks-guess-speakers'
           variant='ghost'
           size='xs'
@@ -323,6 +336,7 @@ export function TextBlocksPanel() {
         </div>
       </ScrollArea>
       <CharacterManagerDialog open={charactersOpen} onOpenChange={setCharactersOpen} />
+      <GlossaryDialog open={glossaryOpen} onOpenChange={setGlossaryOpen} />
     </div>
   )
 }

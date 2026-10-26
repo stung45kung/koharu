@@ -15,4 +15,5 @@ export const server = setupServer(
     HttpResponse.json({ version: 1, characters: [], speakers: {} }),
   ),
   http.get('/api/v1/typesetting', () => HttpResponse.json({})),
+  http.get('/api/v1/glossary', () => HttpResponse.json({ entries: [] })),
 )

@@ -184,5 +184,8 @@ describe('TextBlocksPanel', () => {
     renderWithQuery(<TextBlocksPanel />)
 
     expect(await screen.findByTestId('textblocks-guess-speakers')).toBeDisabled()
+    expect(screen.getByTestId('textblocks-guess-hint')).toHaveTextContent(
+      'characters.guessNeedsCharacters',
+    )
   })
 })

@@ -478,9 +478,14 @@
     "selectPrompt": "Select a character on the left, or add one.",
     "deleteWarning": "Used by {{count}} blocks. Deleting this character makes them unknown speaker.",
     "guess": "Guess speakers for this page",
-    "guessNeedsCharacters": "Add characters first to guess speakers",
+    "guessNeedsCharacters": "Add characters first (Characters button) to guess speakers.",
     "guessNoResult": "The model couldn't tell who speaks. Try a cloud LLM or add more detail to the profiles.",
     "confirmPage": "Confirm guessed speakers on this page",
-    "suggestedHint": "guessed — pick it in the list or confirm the page to accept"
+    "suggestedHint": "guessed — pick it in the list or confirm the page to accept",
+    "manageShort": "Characters",
+    "guessShort": "Guess speakers",
+    "confirmShort": "Confirm ({{count}})",
+    "guessNeedsLlm": "Load an LLM first to guess speakers.",
+    "guessNeedsText": "Run Detect and OCR first to guess speakers."
   }
 }

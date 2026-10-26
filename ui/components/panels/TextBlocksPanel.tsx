@@ -119,6 +119,16 @@ export function TextBlocksPanel() {
     }
   }
 
+  // Why "Guess speakers" can't run right now (shown under the toolbar).
+  const guessBlockedReason =
+    characterBook.characters.length === 0
+      ? t('characters.guessNeedsCharacters')
+      : !llmReady
+        ? t('characters.guessNeedsLlm')
+        : textNodes.length === 0
+          ? t('characters.guessNeedsText')
+          : null
+
   const suggestedOnPage = textNodes
     .map((n) => n.id)
     .filter((id) => isSuggested(characterBook, id))
@@ -167,78 +177,9 @@ export function TextBlocksPanel() {
   return (
     <div className='flex min-h-0 flex-1 flex-col' data-testid='panels-textblocks'>
       <div className='flex items-center justify-between border-b border-border px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase'>
-        <div className='flex items-center gap-1'>
-          <span data-testid='textblocks-count' data-count={textNodes.length}>
-            {t('textBlocks.title', { count: textNodes.length })}
-          </span>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                data-testid='textblocks-characters'
-                aria-label={t('characters.manage')}
-                variant='ghost'
-                size='icon-xs'
-                onClick={() => setCharactersOpen(true)}
-                className='size-5'
-              >
-                <UsersIcon className='size-3' />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side='bottom' sideOffset={4}>
-              {t('characters.manage')}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                data-testid='textblocks-guess-speakers'
-                aria-label={t('characters.guess')}
-                variant='ghost'
-                size='icon-xs'
-                disabled={
-                  !llmReady ||
-                  isProcessing ||
-                  guess.isPending ||
-                  characterBook.characters.length === 0 ||
-                  textNodes.length === 0
-                }
-                onClick={() => void guessPage()}
-                className='size-5'
-              >
-                {guess.isPending ? (
-                  <LoaderCircleIcon className='size-3 animate-spin' />
-                ) : (
-                  <WandSparklesIcon className='size-3' />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side='bottom' sideOffset={4}>
-              {characterBook.characters.length === 0
-                ? t('characters.guessNeedsCharacters')
-                : t('characters.guess')}
-            </TooltipContent>
-          </Tooltip>
-          {suggestedOnPage.length > 0 && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  data-testid='textblocks-confirm-speakers'
-                  aria-label={t('characters.confirmPage')}
-                  variant='ghost'
-                  size='icon-xs'
-                  disabled={confirm.isPending}
-                  onClick={() => void confirmPage()}
-                  className='size-5 text-sky-500 hover:text-sky-500'
-                >
-                  <CheckCheckIcon className='size-3' />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side='bottom' sideOffset={4}>
-                {t('characters.confirmPage')} ({suggestedOnPage.length})
-              </TooltipContent>
-            </Tooltip>
-          )}
-        </div>
+        <span data-testid='textblocks-count' data-count={textNodes.length}>
+          {t('textBlocks.title', { count: textNodes.length })}
+        </span>
         <div className='flex items-center gap-1.5'>
           <span className='font-normal uppercase opacity-50'>{t('textBlocks.readingOrder')}:</span>
           <Select
@@ -281,6 +222,57 @@ export function TextBlocksPanel() {
             </SelectContent>
           </Select>
         </div>
+      </div>
+      <div
+        className='flex flex-wrap items-center gap-1 border-b border-border px-2 py-1'
+        data-testid='textblocks-speaker-toolbar'
+      >
+        <Button
+          data-testid='textblocks-characters'
+          variant='ghost'
+          size='xs'
+          onClick={() => setCharactersOpen(true)}
+          className='text-[11px]'
+        >
+          <UsersIcon className='size-3' />
+          {t('characters.manageShort')}
+        </Button>
+        <Button
+          data-testid='textblocks-guess-speakers'
+          variant='ghost'
+          size='xs'
+          disabled={guessBlockedReason !== null || isProcessing || guess.isPending}
+          onClick={() => void guessPage()}
+          className='text-[11px]'
+        >
+          {guess.isPending ? (
+            <LoaderCircleIcon className='size-3 animate-spin' />
+          ) : (
+            <WandSparklesIcon className='size-3' />
+          )}
+          {t('characters.guessShort')}
+        </Button>
+        {suggestedOnPage.length > 0 && (
+          <Button
+            data-testid='textblocks-confirm-speakers'
+            variant='ghost'
+            size='xs'
+            disabled={confirm.isPending}
+            onClick={() => void confirmPage()}
+            className='text-[11px] text-sky-500 hover:text-sky-500'
+          >
+            <CheckCheckIcon className='size-3' />
+            {t('characters.confirmShort', { count: suggestedOnPage.length })}
+          </Button>
+        )}
+        {guessBlockedReason && (
+          <span
+            data-testid='textblocks-guess-hint'
+            className='basis-full px-1 text-[10px] text-muted-foreground'
+          >
+            {guessBlockedReason}
+          </span>
+        )}
       </div>
       <ScrollArea
         key={page.id}

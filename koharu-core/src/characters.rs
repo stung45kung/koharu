@@ -200,7 +200,16 @@ impl CharacterBook {
     /// Every LLM path appends the block-tag rules ("output the same tags
     /// followed by the translated text"), so the task is phrased as a
     /// "translation" of each block into its speaker label.
-    pub fn speaker_guess_prompt(&self, blocks: &[NodeId]) -> Option<String> {
+    ///
+    /// `layout[i]` (optional, may be shorter than `blocks`) describes where
+    /// block `i` sits on the page; `previous` is `(speaker, line)` from the
+    /// end of the previous page, given as conversation context only.
+    pub fn speaker_guess_prompt(
+        &self,
+        blocks: &[NodeId],
+        layout: &[String],
+        previous: &[(String, String)],
+    ) -> Option<String> {
         if self.characters.is_empty() {
             return None;
         }
@@ -209,10 +218,17 @@ impl CharacterBook {
             "You are assisting a manga translator. Do NOT translate anything. Your only \
              task is to decide which character speaks each numbered text block on this \
              page. The blocks are given in reading order.\n\n\
-             Decide from how the line is spoken (self-reference, sentence endings, \
-             politeness level, tone), from what is said, and from the flow of the \
-             conversation. Use the character profiles below. If you are not reasonably \
-             sure, answer ? instead of guessing.\n\n\
+             How to decide:\n\
+             - Match how the line is spoken (self-reference, sentence endings, politeness, \
+             tone) against the character profiles.\n\
+             - Follow the conversation: a question is usually answered by someone else; \
+             blocks close together on the page are usually one exchange.\n\
+             - Use the block positions to see which lines belong together.\n\
+             - Short interjections or reactions (\"eh...\", \"hmm\", \"no...\") rarely \
+             reveal the speaker on their own: label them only when the surrounding \
+             conversation makes it clear.\n\
+             - Precision matters more than coverage. A wrong label is worse than ?. \
+             Answer ? whenever you are not confident.\n\n\
              For this task the \"translation\" of a block is ONLY its speaker label: \
              after each tag write exactly one label (S1, S2, ... or ?) and nothing else.\n",
         );
@@ -240,6 +256,28 @@ impl CharacterBook {
             out.push_str("\nAlready confirmed by the user (keep these labels):\n");
             out.push_str(&known.join("\n"));
             out.push('\n');
+        }
+        let positions: Vec<String> = layout
+            .iter()
+            .take(blocks.len())
+            .enumerate()
+            .filter(|(_, p)| !p.trim().is_empty())
+            .map(|(i, p)| format!("[{}] {}", i + 1, one_line(p)))
+            .collect();
+        if !positions.is_empty() {
+            out.push_str("\nBlock positions on the page:\n");
+            out.push_str(&positions.join("\n"));
+            out.push('\n');
+        }
+        if !previous.is_empty() {
+            out.push_str("\nEnd of the previous page (context only; do not label these):\n");
+            for (speaker, line) in previous {
+                out.push_str(&format!(
+                    "- {}: {}\n",
+                    one_line(speaker),
+                    one_line(&truncate_chars(line, 120))
+                ));
+            }
         }
         Some(out.trim_end().to_string())
     }
@@ -489,15 +527,25 @@ mod tests {
         let mut book = book();
         let a = book.characters[0].id;
         assert_eq!(
-            CharacterBook::default().speaker_guess_prompt(&[node(1)]),
+            CharacterBook::default().speaker_guess_prompt(&[node(1)], &[], &[]),
             None
         );
 
         book.assign(&[node(2)], Some(a)).unwrap();
         book.suggest(node(3), Some(a));
+        let layout = vec![
+            "top-right".to_string(),
+            String::new(),
+            "bottom-left".to_string(),
+        ];
+        let previous = vec![("Akazukin".to_string(), "line\nbefore".to_string())];
         let prompt = book
-            .speaker_guess_prompt(&[node(1), node(2), node(3)])
+            .speaker_guess_prompt(&[node(1), node(2), node(3)], &layout, &previous)
             .unwrap();
+        assert!(prompt.contains("[1] top-right"));
+        assert!(prompt.contains("[3] bottom-left"));
+        assert!(prompt.contains("- Akazukin: line before"));
+        assert!(prompt.contains("do not label these"));
         assert!(prompt.contains("- S1: Akazukin"));
         assert!(prompt.contains("- S2: ผู้บรรยาย"));
         assert!(prompt.contains("[2] S1"));

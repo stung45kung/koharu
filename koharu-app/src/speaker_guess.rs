@@ -11,7 +11,7 @@
 //! the instructions and simply yield no usable labels.
 
 use anyhow::{Result, bail};
-use koharu_core::{NodeId, NodeKind, PageId};
+use koharu_core::{CharacterBook, NodeId, NodeKind, Page, PageId, Scene, Transform};
 
 use crate::llm;
 use crate::session::ProjectSession;
@@ -24,25 +24,81 @@ pub struct GuessOutcome {
     pub assigned: usize,
 }
 
+/// A text block with OCR text, plus a short description of where it sits.
+struct Block {
+    id: NodeId,
+    text: String,
+    position: String,
+}
+
 /// Text blocks on `page` with non-empty OCR text, in page order (the same
 /// order translation uses for its numbered tags).
-fn text_blocks(session: &ProjectSession, page: PageId) -> Result<Vec<(NodeId, String)>> {
-    let scene = session.scene.read();
-    let Some(page) = scene.page(page) else {
-        bail!("page not found: {page}");
-    };
-    Ok(page
-        .nodes
+fn text_blocks(page: &Page) -> Vec<Block> {
+    let (w, h) = (page.width.max(1) as f32, page.height.max(1) as f32);
+    page.nodes
         .iter()
         .filter_map(|(id, node)| match &node.kind {
             NodeKind::Text(t) => t
                 .text
                 .as_ref()
                 .filter(|s| !s.trim().is_empty())
-                .map(|s| (*id, s.clone())),
+                .map(|s| Block {
+                    id: *id,
+                    text: s.clone(),
+                    position: describe_position(&node.transform, w, h),
+                }),
             _ => None,
         })
-        .collect())
+        .collect()
+}
+
+/// e.g. "top right (x 82%, y 10%)": a coarse 3x3 region plus the centre in
+/// percent, enough for the model to tell which lines sit together.
+fn describe_position(t: &Transform, page_w: f32, page_h: f32) -> String {
+    let cx = ((t.x + t.width / 2.0) / page_w).clamp(0.0, 1.0);
+    let cy = ((t.y + t.height / 2.0) / page_h).clamp(0.0, 1.0);
+    let row = match cy {
+        y if y < 1.0 / 3.0 => "top",
+        y if y < 2.0 / 3.0 => "middle",
+        _ => "bottom",
+    };
+    let col = match cx {
+        x if x < 1.0 / 3.0 => "left",
+        x if x < 2.0 / 3.0 => "center",
+        _ => "right",
+    };
+    format!("{row} {col} (x {:.0}%, y {:.0}%)", cx * 100.0, cy * 100.0)
+}
+
+/// Number of trailing lines of the previous page sent as context.
+const PREVIOUS_PAGE_LINES: usize = 8;
+
+/// `(speaker name or "?", line)` for the last lines of the page before
+/// `page`, using whatever speakers are known there (confirmed or guessed).
+fn previous_page_context(
+    scene: &Scene,
+    page: PageId,
+    book: &CharacterBook,
+) -> Vec<(String, String)> {
+    let Some(index) = scene.pages.get_index_of(&page) else {
+        return Vec::new();
+    };
+    let Some((_, prev)) = index.checked_sub(1).and_then(|i| scene.pages.get_index(i)) else {
+        return Vec::new();
+    };
+    let blocks = text_blocks(prev);
+    let skip = blocks.len().saturating_sub(PREVIOUS_PAGE_LINES);
+    blocks
+        .into_iter()
+        .skip(skip)
+        .map(|b| {
+            let speaker = book
+                .speaker_of(b.id)
+                .map(|c| c.name.clone())
+                .unwrap_or_else(|| "?".to_string());
+            (speaker, b.text)
+        })
+        .collect()
 }
 
 pub async fn guess_page_speakers(
@@ -51,22 +107,32 @@ pub async fn guess_page_speakers(
     page: PageId,
     target_language: Option<&str>,
 ) -> Result<GuessOutcome> {
-    let blocks = text_blocks(session, page)?;
     let book = session.characters();
     if book.characters.is_empty() {
         bail!("add characters before guessing speakers");
     }
+    let (blocks, previous) = {
+        let scene = session.scene.read();
+        let Some(current) = scene.page(page) else {
+            bail!("page not found: {page}");
+        };
+        (
+            text_blocks(current),
+            previous_page_context(&scene, page, &book),
+        )
+    };
     let considered = blocks
         .iter()
-        .filter(|(id, _)| book.is_open_for_guess(*id))
+        .filter(|b| book.is_open_for_guess(b.id))
         .count();
     if considered == 0 {
         return Ok(GuessOutcome::default());
     }
 
-    let ids: Vec<NodeId> = blocks.iter().map(|(id, _)| *id).collect();
-    let texts: Vec<String> = blocks.into_iter().map(|(_, text)| text).collect();
-    let Some(prompt) = book.speaker_guess_prompt(&ids) else {
+    let ids: Vec<NodeId> = blocks.iter().map(|b| b.id).collect();
+    let layout: Vec<String> = blocks.iter().map(|b| b.position.clone()).collect();
+    let texts: Vec<String> = blocks.into_iter().map(|b| b.text).collect();
+    let Some(prompt) = book.speaker_guess_prompt(&ids, &layout, &previous) else {
         bail!("add characters before guessing speakers");
     };
     let labels = llm
@@ -82,11 +148,7 @@ pub async fn guess_page_speakers(
 
 /// Store `labels[i]` as the suggested speaker of `ids[i]` where allowed.
 /// Returns how many blocks changed.
-fn apply_guesses(
-    book: &mut koharu_core::CharacterBook,
-    ids: &[NodeId],
-    labels: &[String],
-) -> usize {
+fn apply_guesses(book: &mut CharacterBook, ids: &[NodeId], labels: &[String]) -> usize {
     let mut changed = 0;
     for (id, label) in ids.iter().zip(labels) {
         if !book.is_open_for_guess(*id) {
@@ -131,6 +193,32 @@ mod tests {
             },
         ]);
         book
+    }
+
+    #[test]
+    fn describes_block_position_in_page_thirds() {
+        let t = Transform {
+            x: 800.0,
+            y: 50.0,
+            width: 100.0,
+            height: 100.0,
+            rotation_deg: 0.0,
+        };
+        assert_eq!(
+            describe_position(&t, 1000.0, 1000.0),
+            "top right (x 85%, y 10%)"
+        );
+        let t = Transform {
+            x: 0.0,
+            y: 900.0,
+            width: 100.0,
+            height: 100.0,
+            rotation_deg: 0.0,
+        };
+        assert_eq!(
+            describe_position(&t, 1000.0, 1000.0),
+            "bottom left (x 5%, y 95%)"
+        );
     }
 
     #[test]

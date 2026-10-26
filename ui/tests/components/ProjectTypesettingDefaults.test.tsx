@@ -56,7 +56,13 @@ describe('ProjectTypesettingDefaults', () => {
       fontSizePx: 28,
       referencePageHeight: 1518,
       color: [255, 255, 255, 255],
+      shrinkToFit: false,
     })
+
+    // Shrink toggle appears once a size is set and saves the flag.
+    await userEvent.click(await screen.findByTestId('project-typesetting-shrink'))
+    await waitFor(() => expect(puts).toHaveLength(2))
+    expect(puts[1]).toMatchObject({ fontSizePx: 28, shrinkToFit: true })
     expect(screen.getByTestId('project-typesetting-color')).toHaveTextContent('#ffffff')
     expect(applied[0]).toMatchObject({
       updateProjectMeta: { patch: { style: { defaultFont: 'Kanit' } } },

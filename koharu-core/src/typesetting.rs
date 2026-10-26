@@ -24,6 +24,11 @@ pub struct TypesettingDefaults {
     /// precedence over the colour detected from the source lettering.
     #[serde(default)]
     pub color: Option<[u8; 4]>,
+    /// `false` (default): blocks without their own size use exactly
+    /// `font_size_px` (scaled to the page), even if the text overflows its
+    /// box. `true`: the size is a ceiling and long text shrinks to fit.
+    #[serde(default)]
+    pub shrink_to_fit: bool,
 }
 
 impl TypesettingDefaults {

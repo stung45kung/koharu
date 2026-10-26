@@ -15,6 +15,8 @@ export type TypesettingDefaults = {
   referencePageHeight?: number | null
   /** RGBA text colour for blocks without their own style. */
   color?: number[] | null
+  /** false: keep the size fixed (may overflow). true: shrink long text to fit. */
+  shrinkToFit?: boolean
 }
 
 export const TYPESETTING_URL = '/api/v1/typesetting'

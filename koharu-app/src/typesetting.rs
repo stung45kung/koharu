@@ -52,6 +52,7 @@ mod tests {
             font_size_px: Some(28.5),
             reference_page_height: Some(1518),
             color: Some([255, 255, 255, 255]),
+            shrink_to_fit: true,
         };
         save(&dir, &d).unwrap();
         assert_eq!(load(&dir), d);

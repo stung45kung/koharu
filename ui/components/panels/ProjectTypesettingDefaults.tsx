@@ -4,6 +4,7 @@ import { BookmarkIcon, XIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { Switch } from '@/components/ui/switch'
 import { useScene } from '@/hooks/useScene'
 import { applyOp } from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
@@ -67,7 +68,16 @@ export function ProjectTypesettingDefaults({
       await save.mutateAsync({
         ...sizePart,
         color: selectedColor ?? typesetting.color ?? null,
+        shrinkToFit: typesetting.shrinkToFit ?? false,
       })
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
+  const setShrink = async (shrinkToFit: boolean) => {
+    try {
+      await save.mutateAsync({ ...typesetting, shrinkToFit })
     } catch (err) {
       useEditorUiStore.getState().showError(String(err))
     }
@@ -120,6 +130,18 @@ export function ProjectTypesettingDefaults({
           )}
         </span>
       </div>
+      {typesetting.fontSizePx ? (
+        <label className='flex items-center gap-2 text-xs'>
+          <Switch
+            size='sm'
+            data-testid='project-typesetting-shrink'
+            checked={typesetting.shrinkToFit ?? false}
+            disabled={save.isPending}
+            onCheckedChange={(checked) => void setShrink(checked)}
+          />
+          <span>{t('typesetting.shrinkToFit')}</span>
+        </label>
+      ) : null}
       <div className='flex flex-wrap gap-1'>
         <Button
           variant='outline'

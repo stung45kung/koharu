@@ -61,6 +61,9 @@ pub struct PageRenderOptions {
     /// Target text size for blocks without their own size: used when the
     /// text fits, otherwise shrunk like auto-size. `None` = pure auto-size.
     pub default_font_size: Option<f32>,
+    /// With a `default_font_size`: shrink long text to fit (`true`) or keep
+    /// the size fixed (`false`).
+    pub default_font_size_shrinks: bool,
     /// Project text colour for blocks without their own style.
     pub default_color: Option<[u8; 4]>,
 }
@@ -195,6 +198,7 @@ impl Renderer {
                 opts.raster,
                 min_font,
                 opts.default_font_size,
+                opts.default_font_size_shrinks,
                 opts.default_color,
             ) {
                 Ok(Some(out)) => rendered_blocks.push(out),
@@ -231,6 +235,7 @@ impl Renderer {
         raster: RasterOptions,
         min_font_size: f32,
         default_font_size: Option<f32>,
+        default_font_size_shrinks: bool,
         default_color: Option<[u8; 4]>,
     ) -> Result<Option<RenderedBlock>> {
         let translation = block.translation.trim();
@@ -281,12 +286,13 @@ impl Renderer {
         if let Some(target_language) = target_language {
             layout_builder = layout_builder.with_hyphenation_language_tag(target_language);
         }
-        let (min_font_size, max_font) = font_size_bounds(
+        let explicit_size = fixed_font_size(
             style.font_size,
             default_font_size,
-            layout_box,
-            min_font_size,
+            default_font_size_shrinks,
         );
+        let (min_font_size, max_font) =
+            font_size_bounds(explicit_size, default_font_size, layout_box, min_font_size);
         let mut render_candidate = |layout: &LayoutRun<'_>| -> Result<RenderedTextCandidate> {
             let resolved_stroke = resolve_stroke_style(
                 block.font_prediction.as_ref(),
@@ -325,7 +331,7 @@ impl Renderer {
                 &layout_builder,
                 translation,
                 layout_box,
-                style.font_size,
+                explicit_size,
                 min_font_size,
                 max_font,
                 mask,
@@ -345,7 +351,7 @@ impl Renderer {
             translation,
             layout_box.width,
             layout_box.height,
-            style.font_size,
+            explicit_size,
             min_font_size,
             max_font,
         )?;
@@ -490,6 +496,16 @@ struct RenderedTextCandidate {
 struct MaskCollisionAttempt {
     candidate: RenderedTextCandidate,
     valid: bool,
+}
+
+/// Size to render at without searching: the block's own size, else the
+/// project default when it is configured as fixed. `None` → fit search.
+fn fixed_font_size(
+    block_size: Option<f32>,
+    default_size: Option<f32>,
+    default_shrinks: bool,
+) -> Option<f32> {
+    block_size.or_else(|| default_size.filter(|s| !default_shrinks && s.is_finite() && *s > 0.0))
 }
 
 /// `(min, max)` sizes for the fit search. With a project default size and
@@ -1061,6 +1077,15 @@ mod tests {
     use super::*;
     use image::{GrayImage, Luma, Rgba, RgbaImage};
     use koharu_core::NodeId;
+
+    #[test]
+    fn fixed_project_size_is_used_unless_shrinking_or_block_has_own_size() {
+        assert_eq!(fixed_font_size(None, Some(28.0), false), Some(28.0));
+        assert_eq!(fixed_font_size(None, Some(28.0), true), None);
+        assert_eq!(fixed_font_size(Some(40.0), Some(28.0), false), Some(40.0));
+        assert_eq!(fixed_font_size(None, None, false), None);
+        assert_eq!(fixed_font_size(None, Some(f32::NAN), false), None);
+    }
 
     #[test]
     fn project_default_size_caps_the_fit_search() {

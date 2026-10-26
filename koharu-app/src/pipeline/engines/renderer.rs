@@ -91,6 +91,7 @@ impl Engine for Model {
                 .map(render_target_language_tag),
             raster: Default::default(),
             default_font_size: ctx.typesetting.font_size_for_page(page_height),
+            default_font_size_shrinks: ctx.typesetting.shrink_to_fit,
             default_color: ctx.typesetting.color,
         };
 

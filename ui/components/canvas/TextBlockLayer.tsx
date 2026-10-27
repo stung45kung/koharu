@@ -1,8 +1,7 @@
 'use client'
 
 import { useDrag } from '@use-gesture/react'
-import { useMemo, useRef } from 'react'
-import { useHotkeys } from 'react-hotkeys-hook'
+import { useRef } from 'react'
 
 import { useBlobImage } from '@/hooks/useBlobData'
 import { useCurrentPage, useTextNodes, type TextNodeEntry } from '@/hooks/useCurrentPage'
@@ -30,11 +29,6 @@ export function TextBlockLayer({ showSprites, scale, style }: TextBlockLayerProp
   const select = useSelectionStore((s) => s.select)
   const mode = useEditorUiStore((s) => s.mode)
   const interactive = mode === 'select' || mode === 'block'
-
-  const hasSelection = useMemo(() => {
-    for (const id of selectedIds) if (id) return true
-    return false
-  }, [selectedIds])
 
   const updateTransform = async (id: string, t: Transform) => {
     if (!page) return

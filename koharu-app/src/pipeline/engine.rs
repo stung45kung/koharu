@@ -72,6 +72,10 @@ pub struct PipelineRunOptions {
     /// and process just that one block. Other engines ignore it.
     pub region: Option<Region>,
     pub reading_order: Option<ReadingOrder>,
+    /// Extra request from the user for re-translating the blocks in
+    /// `text_node_ids` ("more polite", "use X instead of Y"…). The LLM
+    /// engine sends it with the blocks' current translations.
+    pub instruction: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

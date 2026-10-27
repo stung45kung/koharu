@@ -32,6 +32,12 @@ impl Engine for Model {
             ctx.session.glossary().prompt_section(&sources),
             ctx.characters.speaker_prompt_section(&node_ids),
             previous_page_context(ctx.scene, ctx.page, ctx.characters),
+            revision_section(
+                ctx.scene,
+                ctx.page,
+                &node_ids,
+                ctx.options.instruction.as_deref(),
+            ),
         ]
         .into_iter()
         .flatten()
@@ -102,6 +108,44 @@ fn effective_system_prompt(
         }
     };
     Some(format!("{base}\n\n{section}"))
+}
+
+/// The user's re-translation request plus the current translations of the
+/// blocks being sent, so the model revises them instead of starting over.
+fn revision_section(
+    scene: &Scene,
+    page: PageId,
+    node_ids: &[NodeId],
+    instruction: Option<&str>,
+) -> Option<String> {
+    let instruction = one_line(instruction?.trim());
+    if instruction.is_empty() {
+        return None;
+    }
+    let current: std::collections::HashMap<NodeId, String> = text_nodes(scene, page)
+        .into_iter()
+        .filter_map(|(id, _, t)| {
+            let tr = t.translation.as_deref()?.trim();
+            (!tr.is_empty()).then(|| (id, one_line(tr)))
+        })
+        .collect();
+    let lines: Vec<String> = node_ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| match current.get(id) {
+            Some(tr) => format!("[{}] {tr}", i + 1),
+            None => format!("[{}] (no translation yet)", i + 1),
+        })
+        .collect();
+    Some(format!(
+        "Revision request: these blocks were already translated and the user asked for a \
+         new version. Current translations:\n{}\n\
+         User's request for the new translation: {instruction}\n\
+         Follow the request, keep the meaning of the source text, and keep everything the \
+         request does not mention (names, glossary terms, the speaker's voice) as it is. \
+         Output only the new translations in the usual block format.",
+        lines.join("\n")
+    ))
 }
 
 /// Lines of the previous page sent as context.
@@ -209,6 +253,28 @@ inventory::submit! {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn revision_section_lists_current_translations_and_the_request() {
+        let a = node_id(51);
+        let b = node_id(52);
+        let mut scene = scene_with_texts(vec![
+            text_node(a, Some("src a")),
+            text_node(b, Some("src b")),
+        ]);
+        if let Some(page) = scene.pages.get_mut(&page_id())
+            && let Some(node) = page.nodes.get_mut(&a)
+            && let koharu_core::NodeKind::Text(t) = &mut node.kind
+        {
+            t.translation = Some("แปลเดิม".into());
+        }
+        let section = revision_section(&scene, page_id(), &[a, b], Some("  สุภาพกว่านี้ ")).unwrap();
+        assert!(section.contains("[1] แปลเดิม"));
+        assert!(section.contains("[2] (no translation yet)"));
+        assert!(section.contains("User's request for the new translation: สุภาพกว่านี้"));
+        assert!(revision_section(&scene, page_id(), &[a], Some("   ")).is_none());
+        assert!(revision_section(&scene, page_id(), &[a], None).is_none());
+    }
     use koharu_core::{Node, NodeKind, Page, PageId, Scene, TextData, Transform};
     use uuid::Uuid;
 

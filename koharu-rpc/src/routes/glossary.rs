@@ -2,10 +2,13 @@
 //!
 //! - `GET /glossary` — current glossary
 //! - `PUT /glossary` — replace it
+//! - `POST /glossary/suggest` — ask the LLM for names / terms to add
 
 use axum::Json;
 use axum::extract::State;
+use koharu_app::glossary_suggest;
 use koharu_core::{Glossary, GlossaryEntry};
+use serde::{Deserialize, Serialize};
 use utoipa_axum::{router::OpenApiRouter, routes};
 
 use crate::AppState;
@@ -15,7 +18,54 @@ const MAX_ENTRIES: usize = 2000;
 const MAX_FIELD_CHARS: usize = 200;
 
 pub fn router() -> OpenApiRouter<AppState> {
-    OpenApiRouter::default().routes(routes!(get_glossary, put_glossary))
+    OpenApiRouter::default()
+        .routes(routes!(get_glossary, put_glossary))
+        .routes(routes!(suggest_terms))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestTermsRequest {
+    #[serde(default)]
+    pub target_language: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SuggestTermsResponse {
+    /// Proposed entries (not saved — the user picks which to add).
+    pub suggestions: Vec<GlossaryEntry>,
+    /// Distinct OCR lines that were sent to the model.
+    pub lines_scanned: usize,
+    /// Only the first part of a very long project was sent.
+    pub truncated: bool,
+}
+
+#[utoipa::path(
+    post,
+    path = "/glossary/suggest",
+    request_body = SuggestTermsRequest,
+    responses((status = 200, body = SuggestTermsResponse))
+)]
+async fn suggest_terms(
+    State(app): State<AppState>,
+    Json(req): Json<SuggestTermsRequest>,
+) -> ApiResult<Json<SuggestTermsResponse>> {
+    let session = app
+        .current_session()
+        .ok_or_else(|| ApiError::bad_request("no project open"))?;
+    if !app.llm.ready().await {
+        return Err(ApiError::bad_request("no LLM loaded"));
+    }
+    let outcome =
+        glossary_suggest::suggest_terms(&session, &app.llm, req.target_language.as_deref())
+            .await
+            .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    Ok(Json(SuggestTermsResponse {
+        suggestions: outcome.suggestions,
+        lines_scanned: outcome.lines_scanned,
+        truncated: outcome.truncated,
+    }))
 }
 
 #[utoipa::path(get, path = "/glossary", responses((status = 200, body = Glossary)))]

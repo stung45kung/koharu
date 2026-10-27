@@ -16,6 +16,7 @@ pub mod bus;
 pub mod characters;
 pub mod config;
 pub mod glossary;
+pub mod glossary_suggest;
 pub mod google_fonts;
 pub mod history;
 pub mod library;

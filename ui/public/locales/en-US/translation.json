@@ -282,7 +282,12 @@
     "readingOrder": "Reading Order",
     "readingOrderRtl": "Right-to-Left (RTL)",
     "readingOrderLtr": "Left-to-Right (LTR)",
-    "readingOrderCustom": "Custom"
+    "readingOrderCustom": "Custom",
+    "revise": "Re-translate with a request",
+    "reviseTitle": "How should the new translation differ?",
+    "revisePlaceholder": "e.g. more polite / shorter / don't use 'ข้า'",
+    "reviseHint": "Enter to send · Ctrl+Z to undo",
+    "reviseSubmit": "Re-translate"
   },
   "workspace": {
     "importPrompt": "Import a page to begin editing.",
@@ -536,7 +541,16 @@
     "notePlaceholder": "e.g. heroine's nickname",
     "empty": "No terms yet. Add names, places, honorifics or catchphrases that must always be translated the same way.",
     "add": "Add term",
-    "delete": "Delete term"
+    "delete": "Delete term",
+    "suggest": "Suggest terms",
+    "suggestTitle": "Suggested terms — tick the ones to add, edit if needed",
+    "suggestNone": "No new terms found.",
+    "suggestFound": "{{count}} new terms from {{lines}} OCR lines.",
+    "suggestTruncated": "(Long project: only the first part was read.)",
+    "suggestAdded": "Added {{count}} terms — press Save to keep them.",
+    "suggestAdd": "Add selected ({{count}})",
+    "suggestToggleAll": "Select all / none",
+    "suggestDismiss": "Close suggestions"
   },
   "library": {
     "button": "Library",
@@ -562,5 +576,19 @@
     "confirmDelete": "Delete?",
     "deleted": "Deleted \"{{name}}\".",
     "close": "Close"
+  },
+  "check": {
+    "button": "Check",
+    "allGood": "No problems found.",
+    "summary": "{{count}} things to check",
+    "close": "Close",
+    "where": "p.{{page}} #{{block}}",
+    "expected": "glossary: {{term}}",
+    "elsewhere": "elsewhere: {{other}}",
+    "kind": {
+      "glossary": "Not following the glossary",
+      "inconsistent": "Same line, different translation",
+      "untranslated": "Not translated"
+    }
   }
 }

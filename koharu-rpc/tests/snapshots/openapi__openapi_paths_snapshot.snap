@@ -105,6 +105,12 @@ expression: paths
         ],
     ),
     (
+        "/glossary/suggest",
+        [
+            "post",
+        ],
+    ),
+    (
         "/google-fonts",
         [
             "get",

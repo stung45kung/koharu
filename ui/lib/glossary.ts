@@ -44,3 +44,17 @@ export function useSaveGlossary() {
     },
   })
 }
+
+export type SuggestTermsResult = {
+  suggestions: GlossaryEntry[]
+  linesScanned: number
+  truncated: boolean
+}
+
+/** Ask the loaded LLM for names / terms worth adding (nothing is saved). */
+export const suggestTerms = (targetLanguage?: string) =>
+  fetchApi<SuggestTermsResult>(`${GLOSSARY_URL}/suggest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ targetLanguage }),
+  })

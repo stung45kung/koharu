@@ -24,6 +24,9 @@ use crate::AppState;
 use crate::error::{ApiError, ApiResult};
 use crate::routes::operations::{register_cancel, unregister_cancel};
 
+/// Max length of a re-translation instruction.
+const MAX_INSTRUCTION_CHARS: usize = 1000;
+
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::default().routes(routes!(start_pipeline))
 }
@@ -50,6 +53,9 @@ pub struct StartPipelineRequest {
     pub default_font: Option<String>,
     #[serde(default)]
     pub reading_order: Option<ReadingOrder>,
+    /// Re-translation request for the blocks in `text_node_ids`.
+    #[serde(default)]
+    pub instruction: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -88,6 +94,15 @@ async fn start_pipeline(
             text_node_ids: req.text_node_ids,
             region: req.region,
             reading_order: req.reading_order,
+            instruction: req
+                .instruction
+                .map(|s| {
+                    s.trim()
+                        .chars()
+                        .take(MAX_INSTRUCTION_CHARS)
+                        .collect::<String>()
+                })
+                .filter(|s| !s.is_empty()),
         },
     };
 

@@ -1,13 +1,14 @@
 'use client'
 
-import { Loader2Icon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { Loader2Icon, PlusIcon, Trash2Icon, WandSparklesIcon, XIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { useGlossaryQuery, useSaveGlossary, type GlossaryEntry } from '@/lib/glossary'
+import { suggestTerms, useGlossaryQuery, useSaveGlossary, type GlossaryEntry } from '@/lib/glossary'
+import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 
 type Props = {
   open: boolean
@@ -15,6 +16,7 @@ type Props = {
 }
 
 type Row = GlossaryEntry & { key: number }
+type Suggestion = GlossaryEntry & { key: number; checked: boolean }
 
 let nextKey = 0
 const withKey = (e: GlossaryEntry): Row => ({ ...e, key: nextKey++ })
@@ -30,12 +32,17 @@ export function GlossaryDialog({ open, onOpenChange }: Props) {
   const [rows, setRows] = useState<Row[]>([])
   const [initialized, setInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null)
+  const [suggestInfo, setSuggestInfo] = useState<string | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
 
   // Seed once per opening, only from loaded data (never save an empty draft
   // over an existing glossary).
   useEffect(() => {
     if (!open) {
       setInitialized(false)
+      setSuggestions(null)
+      setSuggestInfo(null)
       return
     }
     if (!initialized && query.isSuccess) {
@@ -44,6 +51,39 @@ export function GlossaryDialog({ open, onOpenChange }: Props) {
       setInitialized(true)
     }
   }, [open, initialized, query.isSuccess, query.data])
+
+  const runSuggest = async () => {
+    setSuggesting(true)
+    setError(null)
+    setSuggestInfo(null)
+    try {
+      const res = await suggestTerms(useEditorUiStore.getState().selectedLanguage)
+      const have = new Set(rows.map((r) => r.source.trim().toLowerCase()))
+      const fresh = res.suggestions.filter((s) => !have.has(s.source.trim().toLowerCase()))
+      setSuggestions(fresh.map((s) => ({ ...s, key: nextKey++, checked: true })))
+      setSuggestInfo(
+        t('glossary.suggestFound', { count: fresh.length, lines: res.linesScanned }) +
+          (res.truncated ? ` ${t('glossary.suggestTruncated')}` : ''),
+      )
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  const updateSuggestion = (key: number, patch: Partial<Suggestion>) =>
+    setSuggestions((prev) => prev?.map((s) => (s.key === key ? { ...s, ...patch } : s)) ?? null)
+
+  const addSuggestions = () => {
+    const picked = (suggestions ?? []).filter((s) => s.checked && s.source.trim())
+    setRows((prev) => [
+      ...prev,
+      ...picked.map(({ source, target, note }) => withKey({ source, target, note })),
+    ])
+    setSuggestions(null)
+    setSuggestInfo(t('glossary.suggestAdded', { count: picked.length }))
+  }
 
   const update = (key: number, patch: Partial<GlossaryEntry>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)))
@@ -78,6 +118,89 @@ export function GlossaryDialog({ open, onOpenChange }: Props) {
           <span>{t('glossary.note')}</span>
           <span className='w-7' />
         </div>
+        {suggestions && (
+          <div
+            className='flex max-h-[45%] shrink-0 flex-col gap-1.5 rounded-md p-2 ring-1 ring-sky-500/40'
+            data-testid='glossary-suggestions'
+          >
+            <div className='flex items-center justify-between gap-2'>
+              <span className='text-xs font-medium'>{t('glossary.suggestTitle')}</span>
+              <Button
+                aria-label={t('glossary.suggestDismiss')}
+                variant='ghost'
+                size='icon-xs'
+                onClick={() => setSuggestions(null)}
+              >
+                <XIcon className='size-3' />
+              </Button>
+            </div>
+            {suggestions.length === 0 ? (
+              <p className='text-xs text-muted-foreground'>{t('glossary.suggestNone')}</p>
+            ) : (
+              <div className='min-h-0 flex-1 overflow-y-auto'>
+                <div className='flex flex-col gap-1'>
+                  {suggestions.map((s) => (
+                    <div
+                      key={s.key}
+                      className='grid grid-cols-[auto_1fr_1fr_1.4fr] items-center gap-2 px-1'
+                    >
+                      <input
+                        type='checkbox'
+                        className='size-3.5 accent-primary'
+                        checked={s.checked}
+                        onChange={(e) => updateSuggestion(s.key, { checked: e.target.checked })}
+                      />
+                      <Input
+                        value={s.source}
+                        maxLength={200}
+                        onChange={(e) => updateSuggestion(s.key, { source: e.target.value })}
+                        className='h-7 text-xs'
+                      />
+                      <Input
+                        value={s.target}
+                        maxLength={200}
+                        onChange={(e) => updateSuggestion(s.key, { target: e.target.value })}
+                        className='h-7 text-xs'
+                      />
+                      <Input
+                        value={s.note}
+                        maxLength={200}
+                        onChange={(e) => updateSuggestion(s.key, { note: e.target.value })}
+                        className='h-7 text-xs'
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {suggestions.length > 0 && (
+              <div className='flex items-center justify-end gap-2'>
+                <Button
+                  variant='ghost'
+                  size='xs'
+                  onClick={() =>
+                    setSuggestions((prev) => {
+                      const all = prev?.every((s) => s.checked) ?? false
+                      return prev?.map((s) => ({ ...s, checked: !all })) ?? null
+                    })
+                  }
+                >
+                  {t('glossary.suggestToggleAll')}
+                </Button>
+                <Button
+                  size='xs'
+                  data-testid='glossary-suggest-add'
+                  disabled={!suggestions.some((s) => s.checked)}
+                  onClick={addSuggestions}
+                >
+                  {t('glossary.suggestAdd', {
+                    count: suggestions.filter((s) => s.checked).length,
+                  })}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
         <div className='min-h-0 flex-1 overflow-y-auto' data-testid='glossary-rows'>
           {rows.length === 0 && (
             <p className='rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground'>
@@ -134,7 +257,6 @@ export function GlossaryDialog({ open, onOpenChange }: Props) {
           <Button
             variant='outline'
             size='sm'
-            className='mr-auto'
             disabled={!initialized}
             data-testid='glossary-add'
             onClick={() => setRows((prev) => [...prev, withKey({ source: '', target: '', note: '' })])}
@@ -142,6 +264,24 @@ export function GlossaryDialog({ open, onOpenChange }: Props) {
             <PlusIcon className='size-3.5' />
             {t('glossary.add')}
           </Button>
+          <Button
+            variant='outline'
+            size='sm'
+            disabled={!initialized || suggesting}
+            data-testid='glossary-suggest'
+            onClick={() => void runSuggest()}
+          >
+            {suggesting ? (
+              <Loader2Icon className='size-3.5 animate-spin' />
+            ) : (
+              <WandSparklesIcon className='size-3.5' />
+            )}
+            {t('glossary.suggest')}
+          </Button>
+          <span className='mr-auto' />
+          {suggestInfo && !error && (
+            <p className='text-xs text-muted-foreground'>{suggestInfo}</p>
+          )}
           {error && <p className='text-xs text-rose-600'>{error}</p>}
           <Button variant='ghost' size='sm' onClick={() => onOpenChange(false)}>
             {t('characters.cancel')}

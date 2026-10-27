@@ -4,6 +4,7 @@ import {
   BookOpenIcon,
   CheckCheckIcon,
   LibraryIcon,
+  MessageSquarePenIcon,
   Languages,
   LoaderCircleIcon,
   Trash2Icon,
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import { DraftTextarea } from '@/components/ui/draft-textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -161,7 +163,7 @@ export function TextBlocksPanel() {
     }
   }
 
-  const generate = async (nodeId: string) => {
+  const generate = async (nodeId: string, instruction?: string) => {
     if (!page) return
     const cfg = await getConfig()
     const translator = cfg.pipeline?.translator || 'llm'
@@ -173,6 +175,7 @@ export function TextBlocksPanel() {
       steps: [translator, renderer],
       pages: [page.id],
       textNodeIds: [nodeId],
+      instruction: instruction?.trim() || undefined,
       targetLanguage: editor.selectedLanguage,
       systemPrompt: prefs.customSystemPrompt,
       defaultFont: prefs.defaultFont,
@@ -338,6 +341,7 @@ export function TextBlocksPanel() {
                   onPatch={(patch) => void patchText(node.id, patch)}
                   onDelete={() => void removeNode(node.id)}
                   onGenerate={() => void generate(node.id)}
+                  onRevise={(instruction) => void generate(node.id, instruction)}
                   processing={isProcessing}
                   llmReady={llmReady}
                   characterBook={characterBook}
@@ -381,6 +385,7 @@ type BlockCardProps = {
   onPatch: (patch: TextDataPatch) => void
   onDelete: () => void
   onGenerate: () => void
+  onRevise: (instruction: string) => void
   processing: boolean
   llmReady: boolean
   characterBook: CharacterBook
@@ -395,6 +400,7 @@ function BlockCard({
   onPatch,
   onDelete,
   onGenerate,
+  onRevise,
   processing,
   llmReady,
   characterBook,
@@ -534,6 +540,11 @@ function BlockCard({
                       {t('llm.generateTooltip')}
                     </TooltipContent>
                   </Tooltip>
+                  <ReviseButton
+                    index={index}
+                    disabled={!llmReady || processing || !hasOcr}
+                    onRevise={onRevise}
+                  />
                 </div>
               </div>
               <DraftTextarea
@@ -578,5 +589,130 @@ function BlockCard({
         </AccordionContent>
       </AccordionItem>
     </motion.div>
+  )
+}
+
+const REVISE_HISTORY_KEY = 'koharu.reviseHistory'
+const REVISE_HISTORY_MAX = 6
+
+const loadReviseHistory = (): string[] => {
+  try {
+    const raw = localStorage.getItem(REVISE_HISTORY_KEY)
+    const list = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+const saveReviseHistory = (instruction: string) => {
+  try {
+    const next = [instruction, ...loadReviseHistory().filter((x) => x !== instruction)].slice(
+      0,
+      REVISE_HISTORY_MAX,
+    )
+    localStorage.setItem(REVISE_HISTORY_KEY, JSON.stringify(next))
+  } catch {
+    // Storage unavailable: the history is only a convenience.
+  }
+}
+
+/** Re-translate one block with a short request ("more polite", ...). */
+function ReviseButton({
+  index,
+  disabled,
+  onRevise,
+}: {
+  index: number
+  disabled: boolean
+  onRevise: (instruction: string) => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [instruction, setInstruction] = useState('')
+  const [history, setHistory] = useState<string[]>([])
+
+  useEffect(() => {
+    if (open) setHistory(loadReviseHistory())
+  }, [open])
+
+  const submit = (value: string) => {
+    const text = value.trim()
+    if (!text) return
+    saveReviseHistory(text)
+    onRevise(text)
+    setOpen(false)
+    setInstruction('')
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              data-testid={`textblock-revise-${index}`}
+              aria-label={t('textBlocks.revise')}
+              variant='ghost'
+              size='icon-xs'
+              disabled={disabled}
+              className='size-5'
+            >
+              <MessageSquarePenIcon className='size-3' />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side='left' sideOffset={4}>
+          {t('textBlocks.revise')}
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent side='left' align='start' className='w-72 p-2'>
+        <div className='flex flex-col gap-1.5'>
+          <span className='text-xs font-medium'>{t('textBlocks.reviseTitle')}</span>
+          <textarea
+            data-testid={`textblock-revise-input-${index}`}
+            autoFocus
+            value={instruction}
+            maxLength={1000}
+            rows={2}
+            placeholder={t('textBlocks.revisePlaceholder')}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                submit(instruction)
+              }
+            }}
+            className='w-full resize-none rounded-md border border-input bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring'
+          />
+          {history.length > 0 && (
+            <div className='flex flex-wrap gap-1'>
+              {history.map((h) => (
+                <button
+                  key={h}
+                  type='button'
+                  onClick={() => submit(h)}
+                  className='max-w-full truncate rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground'
+                  title={h}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className='flex items-center justify-between gap-2'>
+            <span className='text-[10px] text-muted-foreground'>{t('textBlocks.reviseHint')}</span>
+            <Button
+              size='xs'
+              data-testid={`textblock-revise-submit-${index}`}
+              disabled={!instruction.trim()}
+              onClick={() => submit(instruction)}
+            >
+              {t('textBlocks.reviseSubmit')}
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

@@ -33,3 +33,14 @@ jobs:
           cd ui
           bunx tsc --noEmit -p . 2>&1 | head -30 | while IFS= read -r line; do echo "::error title=tsc::${line//%/%25}"; done
           bunx vitest run --reporter=github-actions --reporter=dot || true
+  rtest:
+    name: rtest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          cargo test -p koharu-renderer --lib > raw.txt 2>&1 || true
+          sed 's/\x1b\[[0-9;]*m//g' raw.txt > t.txt
+          grep -E '^test .*FAILED|panicked|assert|^error' t.txt | head -30 | while IFS= read -r line; do echo "::error title=rtest::${line//%/%25}"; done
+          tail -3 t.txt | while IFS= read -r line; do echo "::notice title=rtest-tail::${line//%/%25}"; done

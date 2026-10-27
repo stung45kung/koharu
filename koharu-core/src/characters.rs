@@ -79,6 +79,11 @@ pub struct Character {
     /// Alignment for blocks without an alignment of their own.
     #[serde(default)]
     pub text_align: Option<crate::TextAlign>,
+    /// Short notes for telling this character's lines apart in the source
+    /// language (self-reference, sentence endings, verbal tics...). Used by
+    /// speaker guessing instead of the long profile when set.
+    #[serde(default)]
+    pub speech_cues: String,
 }
 
 impl Character {
@@ -99,9 +104,12 @@ pub const CHARACTER_BOOK_VERSION: u32 = 1;
 /// Max characters of a single description sent to the model when
 /// translating (same as the editor's limit, so nothing the user wrote is cut).
 pub const MAX_DESCRIPTION_CHARS: usize = 4000;
-/// Shorter cap for speaker guessing, which lists every character at once
-/// and only needs enough to tell them apart.
-pub const MAX_GUESS_DESCRIPTION_CHARS: usize = 1500;
+/// Cap for a profile used by speaker guessing when the character has no
+/// speech cues: every character is listed at once, and long translation
+/// notes drown the few lines that tell speakers apart.
+pub const MAX_GUESS_DESCRIPTION_CHARS: usize = 400;
+/// Cap for speech cues sent to speaker guessing.
+pub const MAX_SPEECH_CUES_CHARS: usize = 600;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -266,6 +274,11 @@ impl CharacterBook {
              - Short interjections or reactions (\"eh...\", \"hmm\", \"no...\") rarely \
              reveal the speaker on their own: label them only when the surrounding \
              conversation makes it clear.\n\
+             - Each character keeps the same way of speaking across the page: two \
+             lines with the same self-reference or sentence endings are usually the \
+             same speaker, and a character's lines don't switch style.\n\
+             - Only characters who actually take part in this scene speak; do not \
+             spread labels over the whole list.\n\
              - Precision matters more than coverage. A wrong label is worse than ?. \
              Answer ? whenever you are not confident.\n\n\
              For this task the \"translation\" of a block is ONLY its speaker label: \
@@ -274,10 +287,15 @@ impl CharacterBook {
         out.push_str("\nCharacters:\n");
         for (i, c) in self.characters.iter().enumerate() {
             let name = one_line(&c.name);
-            let desc = one_line(&truncate_chars(
-                c.description.trim(),
-                MAX_GUESS_DESCRIPTION_CHARS,
-            ));
+            let cues = c.speech_cues.trim();
+            let desc = if cues.is_empty() {
+                one_line(&truncate_chars(
+                    c.description.trim(),
+                    MAX_GUESS_DESCRIPTION_CHARS,
+                ))
+            } else {
+                one_line(&truncate_chars(cues, MAX_SPEECH_CUES_CHARS))
+            };
             if desc.is_empty() {
                 out.push_str(&format!("- S{}: {}\n", i + 1, name));
             } else {
@@ -431,6 +449,20 @@ fn truncate_chars(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guess_prompt_prefers_speech_cues_over_the_profile() {
+        let mut book = CharacterBook::default();
+        let mut a = character(1, "Ruruie", &"long translation notes ".repeat(50));
+        a.speech_cues = "calls herself 私, ends with わ".into();
+        let b = character(2, "Man", &"x".repeat(1000));
+        book.set_characters(vec![a, b]);
+        let prompt = book.speaker_guess_prompt(&[node(1)], &[], &[]).unwrap();
+        assert!(prompt.contains("- S1: Ruruie — calls herself 私, ends with わ"));
+        assert!(!prompt.contains("long translation notes"));
+        let man = prompt.lines().find(|l| l.starts_with("- S2")).unwrap();
+        assert!(man.chars().count() < MAX_GUESS_DESCRIPTION_CHARS + 20);
+    }
 
     #[test]
     fn effect_only_when_bold_or_italic_is_set() {

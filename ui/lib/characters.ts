@@ -22,6 +22,8 @@ export type Character = {
   bold?: boolean | null
   italic?: boolean | null
   textAlign?: 'left' | 'center' | 'right' | null
+  /** Short source-language cues used by speaker guessing. */
+  speechCues?: string
 }
 
 export type CharacterBook = {

@@ -415,6 +415,23 @@ export function CharacterManagerDialog({
                     {t('characters.styleHint')}
                   </span>
                 </div>
+                <div className='flex shrink-0 flex-col gap-1'>
+                  <span className='text-xs text-muted-foreground'>
+                    {t('characters.speechCues')}
+                  </span>
+                  <Textarea
+                    data-testid='character-speech-cues'
+                    value={selected.speechCues ?? ''}
+                    maxLength={1000}
+                    rows={2}
+                    placeholder={t('characters.speechCuesPlaceholder')}
+                    onChange={(e) => update(selected.id, { speechCues: e.target.value })}
+                    className='min-h-0 resize-none px-3 py-1.5 text-xs'
+                  />
+                  <span className='text-[10px] text-muted-foreground'>
+                    {t('characters.speechCuesHint')}
+                  </span>
+                </div>
                 {usage[selected.id] ? (
                   <p className='shrink-0 text-[10px] text-muted-foreground'>
                     {t('characters.deleteWarning', { count: usage[selected.id] })}

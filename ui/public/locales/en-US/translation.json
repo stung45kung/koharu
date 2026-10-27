@@ -514,7 +514,10 @@
     "sizeHint": "px",
     "sizeHintRef": "px at a {{height}} px tall page (scales with the page)",
     "clearSize": "Clear size",
-    "effect": "Style"
+    "effect": "Style",
+    "speechCues": "Speech cues (for Guess speakers)",
+    "speechCuesPlaceholder": "e.g. calls herself 私, ends sentences with わ / のよ, calls others あんた",
+    "speechCuesHint": "Short notes on how this character talks in the original. Guess speakers uses these instead of the long profile below, which helps a lot with 3+ characters."
   },
   "typesetting": {
     "title": "Project defaults",

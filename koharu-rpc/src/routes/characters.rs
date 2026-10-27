@@ -210,6 +210,7 @@ fn validate_characters(characters: Vec<Character>) -> Result<Vec<Character>, Str
                 c.name
             ));
         }
+        c.speech_cues = c.speech_cues.trim().chars().take(1000).collect();
         c.font_size_px = c
             .font_size_px
             .filter(|s| s.is_finite() && (1.0..=1000.0).contains(s));

@@ -72,7 +72,7 @@ pub struct ProjectSession {
 #[derive(Debug, Clone)]
 pub enum UndoStep {
     /// A scene op (new epoch, the op that was applied).
-    Scene(u64, Op),
+    Scene(u64, Box<Op>),
     /// The character book (speakers / profiles) went back to an earlier
     /// version — the scene epoch is unchanged.
     Characters,
@@ -238,7 +238,7 @@ impl ProjectSession {
                     // Nothing left to undo; keep the step list as it was.
                     timeline.undo.push_back(kind);
                 }
-                Ok(out.map(|(e, op)| UndoStep::Scene(e, op)))
+                Ok(out.map(|(e, op)| UndoStep::Scene(e, Box::new(op))))
             }
         }
     }
@@ -266,7 +266,7 @@ impl ProjectSession {
                 if out.is_some() {
                     timeline.undo.push_back(StepKind::Scene);
                 }
-                Ok(out.map(|(e, op)| UndoStep::Scene(e, op)))
+                Ok(out.map(|(e, op)| UndoStep::Scene(e, Box::new(op))))
             }
         }
     }

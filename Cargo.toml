@@ -74,6 +74,8 @@ rayon = "1.12"
 tokenizers = { version = "0.23", default-features = false, features = ["onig"] }
 strum = { version = "0.28", features = ["derive"] }
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
+hayro = "0.7.1"
+rars = "0.6.0"
 dirs = "6.0"
 futures = "0.3"
 eventsource-stream = "0.2.3"

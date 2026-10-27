@@ -141,6 +141,18 @@ async fn create_pages(
     // tokio runtime while decoding.
     let blobs = session.blobs.clone();
     let decoded: Vec<(String, u32, u32, BlobRef)> = tokio::task::spawn_blocking(move || {
+        // ZIP/CBZ, RAR/CBR and PDF uploads expand into their pages, in order.
+        let files = files
+            .into_par_iter()
+            .map(|(name, bytes)| {
+                koharu_app::page_import::expand_bytes(&name, bytes)
+                    .map_err(|e| ApiError::bad_request(format!("{e:#}")))
+            })
+            .collect::<ApiResult<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .map(|p| (p.name, p.bytes))
+            .collect::<Vec<_>>();
         files
             .into_par_iter()
             .map(
@@ -270,16 +282,22 @@ async fn create_pages_from_paths(
 
     let blobs = session.blobs.clone();
     let decoded: Vec<(String, u32, u32, BlobRef)> = tokio::task::spawn_blocking(move || {
-        paths
+        // ZIP/CBZ, RAR/CBR and PDF files expand into their pages, in order.
+        let files = paths
             .into_par_iter()
-            .map(|path| -> ApiResult<(String, u32, u32, BlobRef)> {
-                let filename = std::path::Path::new(&path)
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "page.bin".to_string());
-                let bytes = std::fs::read(&path)
-                    .map_err(|e| ApiError::bad_request(format!("read `{filename}`: {e}")))?;
+            .map(|path| {
+                koharu_app::page_import::expand_path(std::path::Path::new(&path))
+                    .map_err(|e| ApiError::bad_request(format!("{e:#}")))
+            })
+            .collect::<ApiResult<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        files
+            .into_par_iter()
+            .map(|page| -> ApiResult<(String, u32, u32, BlobRef)> {
+                let filename = page.name;
+                let bytes = page.bytes;
                 let img = image::load_from_memory(&bytes)
                     .map_err(|e| ApiError::bad_request(format!("decode `{filename}`: {e}")))?;
                 let (w, h) = img.dimensions();

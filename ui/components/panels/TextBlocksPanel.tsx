@@ -41,6 +41,8 @@ import { getConfig, startPipeline, useGetCurrentLlm } from '@/lib/api/default/de
 import type { TextDataPatch } from '@/lib/api/schemas'
 import {
   isSuggested,
+  isOtherSpeaker,
+  OTHER_SPEAKER_ID,
   speakerOf,
   useAssignSpeaker,
   useCharacters,
@@ -450,7 +452,9 @@ function BlockCard({
   const hasTranslation = !!data.translation?.trim()
   const preview = data.translation?.trim() || data.text?.trim()
   const speaker: Character | null = speakerOf(characterBook, node.id)
-  const guessed = speaker !== null && isSuggested(characterBook, node.id)
+  const other = isOtherSpeaker(characterBook, node.id)
+  const speakerName = speaker?.name ?? (other ? t('characters.otherSpeaker') : null)
+  const guessed = speakerName !== null && isSuggested(characterBook, node.id)
 
   return (
     <motion.div
@@ -495,18 +499,22 @@ function BlockCard({
             >
               {t('textBlocks.translationBadge')}
             </span>
-            {speaker && (
+            {speakerName && (
               <span
                 data-testid={`textblock-speaker-chip-${index}`}
                 data-suggested={guessed}
                 className={`max-w-20 shrink-0 truncate rounded-sm px-1 py-0.5 text-[9px] font-medium ${
                   guessed
-                    ? 'border border-dashed border-sky-500 text-sky-600 dark:text-sky-300'
-                    : 'bg-sky-500/70 text-white'
+                    ? other
+                      ? 'border border-dashed border-zinc-400 text-zinc-500'
+                      : 'border border-dashed border-sky-500 text-sky-600 dark:text-sky-300'
+                    : other
+                      ? 'bg-zinc-500/70 text-white'
+                      : 'bg-sky-500/70 text-white'
                 }`}
-                title={guessed ? `${speaker.name} (${t('characters.suggestedHint')})` : speaker.name}
+                title={guessed ? `${speakerName} (${t('characters.suggestedHint')})` : speakerName}
               >
-                {speaker.name}
+                {speakerName}
                 {guessed && '?'}
               </span>
             )}
@@ -597,7 +605,7 @@ function BlockCard({
                 {t('characters.speakerLabel')}
               </span>
               <Select
-                value={speaker?.id ?? UNKNOWN_SPEAKER}
+                value={speaker?.id ?? (other ? OTHER_SPEAKER_ID : UNKNOWN_SPEAKER)}
                 onValueChange={(value) =>
                   onSpeakerChange(value === UNKNOWN_SPEAKER ? null : value)
                 }
@@ -612,6 +620,13 @@ function BlockCard({
                 <SelectContent>
                   <SelectItem value={UNKNOWN_SPEAKER} className='text-xs text-muted-foreground'>
                     {t('characters.unknownSpeaker')}
+                  </SelectItem>
+                  <SelectItem
+                    value={OTHER_SPEAKER_ID}
+                    className='text-xs text-muted-foreground'
+                    data-testid={`textblock-speaker-other-${index}`}
+                  >
+                    {t('characters.otherSpeakerOption')}
                   </SelectItem>
                   {characterBook.characters.map((c) => (
                     <SelectItem key={c.id} value={c.id} className='text-xs'>

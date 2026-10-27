@@ -32,8 +32,16 @@ use crate::scene::NodeId;
 pub struct CharacterId(pub Uuid);
 
 impl CharacterId {
+    /// Reserved id meaning "someone not in the character list" (side
+    /// characters, crowds, narration). Never the id of a real character.
+    pub const OTHER: CharacterId = CharacterId(Uuid::max());
+
     pub fn new() -> Self {
         Self(Uuid::now_v7())
+    }
+
+    pub fn is_other(self) -> bool {
+        self == Self::OTHER
     }
 }
 
@@ -158,6 +166,16 @@ impl CharacterBook {
         self.characters.iter().find(|c| c.id == id)
     }
 
+    /// A real character or the reserved "other" speaker.
+    fn is_assignable(&self, id: CharacterId) -> bool {
+        id.is_other() || self.character(id).is_some()
+    }
+
+    /// True when `node` is spoken by someone not in the character list.
+    pub fn is_other(&self, node: NodeId) -> bool {
+        self.speakers.get(&node).is_some_and(|id| id.is_other())
+    }
+
     /// Speaker of `node`, if it is assigned to a character that still exists.
     pub fn speaker_of(&self, node: NodeId) -> Option<&Character> {
         self.speakers.get(&node).and_then(|id| self.character(*id))
@@ -169,7 +187,8 @@ impl CharacterBook {
         self.characters = characters;
         let alive: std::collections::HashSet<CharacterId> =
             self.characters.iter().map(|c| c.id).collect();
-        self.speakers.retain(|_, id| alive.contains(id));
+        self.speakers
+            .retain(|_, id| id.is_other() || alive.contains(id));
         self.prune_suggested();
     }
 
@@ -192,7 +211,7 @@ impl CharacterBook {
             return false;
         }
         match character {
-            Some(id) if self.character(id).is_some() => {
+            Some(id) if self.is_assignable(id) => {
                 let changed = self.speakers.get(&node) != Some(&id) || !self.is_suggested(node);
                 self.speakers.insert(node, id);
                 if !self.is_suggested(node) {
@@ -227,7 +246,7 @@ impl CharacterBook {
     ) -> Result<(), UnknownCharacter> {
         match character {
             Some(id) => {
-                if self.character(id).is_none() {
+                if !self.is_assignable(id) {
                     return Err(UnknownCharacter(id));
                 }
                 for node in nodes {
@@ -333,6 +352,9 @@ impl CharacterBook {
             .filter(|(_, node)| !self.is_suggested(**node))
             .filter_map(|(i, node)| {
                 let id = self.speakers.get(node)?;
+                if id.is_other() {
+                    return Some(format!("[{}] X", i + 1));
+                }
                 let pos = self.characters.iter().position(|c| c.id == *id)?;
                 Some(format!("[{}] S{}", i + 1, pos + 1))
             })
@@ -400,7 +422,8 @@ impl CharacterBook {
     pub fn speaker_prompt_section(&self, blocks: &[NodeId]) -> Option<String> {
         let speakers: Vec<Option<&Character>> =
             blocks.iter().map(|id| self.speaker_of(*id)).collect();
-        if speakers.iter().all(Option::is_none) {
+        let others: Vec<bool> = blocks.iter().map(|id| self.is_other(*id)).collect();
+        if speakers.iter().all(Option::is_none) && !others.contains(&true) {
             return None;
         }
 
@@ -439,6 +462,11 @@ impl CharacterBook {
         for (i, speaker) in speakers.iter().copied().enumerate() {
             match speaker {
                 Some(c) => out.push_str(&format!("[{}] {}\n", i + 1, label(c))),
+                None if others[i] => out.push_str(&format!(
+                    "[{}] a minor character with no profile (use a neutral voice; do not \
+                     borrow the voice of a profiled speaker)\n",
+                    i + 1
+                )),
                 None => out.push_str(&format!(
                     "[{}] unknown speaker (do not assume a voice beyond the source text)\n",
                     i + 1
@@ -474,6 +502,24 @@ fn truncate_chars(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn other_speaker_survives_and_is_described() {
+        let mut book = CharacterBook::default();
+        book.set_characters(vec![character(1, "A", "")]);
+        book.assign(&[node(1)], Some(CharacterId::OTHER)).unwrap();
+        book.set_characters(vec![character(2, "B", "")]);
+        assert!(book.is_other(node(1)));
+        assert!(book.speaker_of(node(1)).is_none());
+        let section = book.speaker_prompt_section(&[node(1)]).unwrap();
+        assert!(section.contains("[1] a minor character with no profile"));
+        let guess = book
+            .speaker_guess_prompt(&[node(1)], &[], &[], &Default::default())
+            .unwrap();
+        assert!(guess.contains("[1] X"));
+        assert!(book.suggest(node(2), Some(CharacterId::OTHER)));
+        assert!(book.is_other(node(2)) && book.is_suggested(node(2)));
+    }
 
     #[test]
     fn guess_prompt_lists_confirmed_example_lines() {

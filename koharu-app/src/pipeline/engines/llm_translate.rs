@@ -170,7 +170,14 @@ fn previous_page_context(scene: &Scene, page: PageId, book: &CharacterBook) -> O
             let speaker = book
                 .speaker_of(id)
                 .map(|c| one_line(&c.name))
-                .unwrap_or_else(|| "?".to_string());
+                .unwrap_or_else(|| {
+                    if book.is_other(id) {
+                        "minor character"
+                    } else {
+                        "?"
+                    }
+                    .to_string()
+                });
             let translation = t
                 .translation
                 .as_deref()

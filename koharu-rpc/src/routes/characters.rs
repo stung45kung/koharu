@@ -164,6 +164,7 @@ async fn put_speakers(
         .current_session()
         .ok_or_else(|| ApiError::bad_request("no project open"))?;
     if let Some(id) = req.character_id
+        && !id.is_other()
         && session.characters().character(id).is_none()
     {
         return Err(ApiError::bad_request(format!("unknown character id {id}")));

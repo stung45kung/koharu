@@ -135,6 +135,13 @@ export function useConfirmSpeakers() {
   return useMutation({ mutationFn: confirmSpeakers, onSuccess: storeBook })
 }
 
+/** Reserved speaker id: someone not in the character list (`CharacterId::OTHER`). */
+export const OTHER_SPEAKER_ID = 'ffffffff-ffff-ffff-ffff-ffffffffffff'
+
+export function isOtherSpeaker(book: CharacterBook, nodeId: string): boolean {
+  return book.speakers[nodeId] === OTHER_SPEAKER_ID
+}
+
 export function isSuggested(book: CharacterBook, nodeId: string): boolean {
   return book.suggested?.includes(nodeId) ?? false
 }

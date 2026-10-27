@@ -146,7 +146,7 @@ fn previous_page_context(
             let speaker = book
                 .speaker_of(b.id)
                 .map(|c| c.name.clone())
-                .unwrap_or_else(|| "?".to_string());
+                .unwrap_or_else(|| if book.is_other(b.id) { "X" } else { "?" }.to_string());
             (speaker, b.text)
         })
         .collect()
@@ -200,12 +200,20 @@ pub async fn guess_page_speakers(
 
 /// Store `labels[i]` as the suggested speaker of `ids[i]` where allowed.
 /// Returns how many blocks changed.
-/// `?` (unsure) or `X` (a character not in the list), possibly decorated.
-fn is_no_listed_speaker(label: &str) -> bool {
-    let t = label
+fn bare(label: &str) -> &str {
+    label
         .trim()
-        .trim_matches(|c: char| c == '*' || c == '`' || c == '.' || c == '"');
-    t == "?" || t.eq_ignore_ascii_case("x")
+        .trim_matches(|c: char| c == '*' || c == '`' || c == '.' || c == '"')
+}
+
+/// `X`: a character not in the list.
+fn is_other_label(label: &str) -> bool {
+    bare(label).eq_ignore_ascii_case("x")
+}
+
+/// `?` (unsure) or `X` (not in the list), possibly decorated.
+fn is_no_listed_speaker(label: &str) -> bool {
+    bare(label) == "?" || is_other_label(label)
 }
 
 fn apply_guesses(book: &mut CharacterBook, ids: &[NodeId], labels: &[String]) -> usize {
@@ -214,10 +222,14 @@ fn apply_guesses(book: &mut CharacterBook, ids: &[NodeId], labels: &[String]) ->
         if !book.is_open_for_guess(*id) {
             continue;
         }
-        let character = book.parse_speaker_label(label);
+        // "X": someone not in the list → the reserved "other" speaker.
+        let character = if is_other_label(label) {
+            Some(CharacterId::OTHER)
+        } else {
+            book.parse_speaker_label(label)
+        };
         // An unusable answer leaves an earlier guess in place rather than
-        // wiping it; only an explicit "?" (unsure) or "X" (someone not in
-        // the list) clears a guess.
+        // wiping it; only an explicit "?" (unsure) clears a guess.
         if character.is_none() && !is_no_listed_speaker(label) {
             continue;
         }

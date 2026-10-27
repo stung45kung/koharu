@@ -96,8 +96,12 @@ impl Character {
 
 pub const CHARACTER_BOOK_VERSION: u32 = 1;
 
-/// Max characters of a single description sent to the model.
-pub const MAX_DESCRIPTION_CHARS: usize = 1500;
+/// Max characters of a single description sent to the model when
+/// translating (same as the editor's limit, so nothing the user wrote is cut).
+pub const MAX_DESCRIPTION_CHARS: usize = 4000;
+/// Shorter cap for speaker guessing, which lists every character at once
+/// and only needs enough to tell them apart.
+pub const MAX_GUESS_DESCRIPTION_CHARS: usize = 1500;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema, ToSchema)]
 #[serde(rename_all = "camelCase")]
@@ -270,7 +274,10 @@ impl CharacterBook {
         out.push_str("\nCharacters:\n");
         for (i, c) in self.characters.iter().enumerate() {
             let name = one_line(&c.name);
-            let desc = one_line(&truncate_chars(c.description.trim(), MAX_DESCRIPTION_CHARS));
+            let desc = one_line(&truncate_chars(
+                c.description.trim(),
+                MAX_GUESS_DESCRIPTION_CHARS,
+            ));
             if desc.is_empty() {
                 out.push_str(&format!("- S{}: {}\n", i + 1, name));
             } else {

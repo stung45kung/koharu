@@ -230,7 +230,11 @@ impl App {
             .current_session()
             .ok_or_else(|| anyhow::anyhow!("no project open"))?;
         let result = session.undo()?;
-        Ok(result.map(|(e, _)| e))
+        Ok(result.map(|step| match step {
+            crate::session::UndoStep::Scene(e, _) => e,
+            // Character edits don't move the scene epoch.
+            crate::session::UndoStep::Characters => session.epoch(),
+        }))
     }
 
     pub fn redo(&self) -> Result<Option<u64>> {
@@ -238,7 +242,11 @@ impl App {
             .current_session()
             .ok_or_else(|| anyhow::anyhow!("no project open"))?;
         let result = session.redo()?;
-        Ok(result.map(|(e, _)| e))
+        Ok(result.map(|step| match step {
+            crate::session::UndoStep::Scene(e, _) => e,
+            // Character edits don't move the scene epoch.
+            crate::session::UndoStep::Characters => session.epoch(),
+        }))
     }
 }
 

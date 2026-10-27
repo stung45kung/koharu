@@ -18,6 +18,7 @@ pub mod config;
 pub mod glossary;
 pub mod google_fonts;
 pub mod history;
+pub mod library;
 pub mod llm;
 pub mod pipeline;
 pub mod projects;

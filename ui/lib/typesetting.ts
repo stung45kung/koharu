@@ -62,3 +62,13 @@ export function defaultSizeForPage(d: TypesettingDefaults, pageHeight: number): 
   if (!ref || ref <= 0 || pageHeight <= 0) return size
   return Math.max(1, (size * pageHeight) / ref)
 }
+
+export type ResetBlockStylesResult = { reset: number; epoch?: number | null }
+
+/** Drop the own style of some text blocks (one undo step). */
+export const resetBlockStyles = (pageId: string, nodeIds: string[]) =>
+  fetchApi<ResetBlockStylesResult>(`${TYPESETTING_URL}/reset-block-styles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pageId, nodeIds }),
+  })

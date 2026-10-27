@@ -260,7 +260,10 @@
       "italicWithName": "{{name}} Italic",
       "regularItalic": "Regular Italic"
     },
-    "rotationLabel": "Rotation (°)"
+    "rotationLabel": "Rotation (°)",
+    "resetStyle": "Reset style",
+    "resetStyleHintSelected": "Remove the font, size, colour, bold/italic, stroke and alignment set on the selected blocks, so they follow their character and the project defaults again. Ctrl+Z undoes it.",
+    "resetStyleHintAll": "Remove the font, size, colour, bold/italic, stroke and alignment set on every block of this page, so they follow their character and the project defaults again. Ctrl+Z undoes it."
   },
   "textBlocks": {
     "emptyPrompt": "Open an image to see text blocks.",
@@ -531,5 +534,30 @@
     "empty": "No terms yet. Add names, places, honorifics or catchphrases that must always be translated the same way.",
     "add": "Add term",
     "delete": "Delete term"
+  },
+  "library": {
+    "button": "Library",
+    "title": "Series library",
+    "description": "Keep characters and glossary of a series in one place. Save them from this project, then load them into the next chapter's project.",
+    "saveTitle": "Save this project's characters & glossary",
+    "namePlaceholder": "Series name",
+    "save": "Save",
+    "overwrite": "Overwrite",
+    "saveHint": "Saves character profiles (with font, colour, size…), the glossary and the project's typesetting defaults. Speaker assignments stay in the project.",
+    "saved": "Saved \"{{name}}\": {{characters}} characters, {{glossary}} glossary terms.",
+    "listTitle": "Saved series",
+    "applyTypesetting": "Also load size & colour defaults",
+    "loading": "Loading…",
+    "empty": "Nothing saved yet.",
+    "counts": "{{characters}} characters · {{glossary}} terms",
+    "hasTypesetting": "typesetting defaults",
+    "apply": "Load into project",
+    "applyHint": "Loading merges: a character with the same name is updated (its blocks keep their speaker), new characters and terms are added, nothing is deleted. Ctrl+Z undoes the character changes.",
+    "applied": "Loaded: {{added}} characters added, {{updated}} updated; {{gAdded}} terms added, {{gUpdated}} updated.",
+    "typesettingApplied": "Size & colour defaults loaded.",
+    "delete": "Delete",
+    "confirmDelete": "Delete?",
+    "deleted": "Deleted \"{{name}}\".",
+    "close": "Close"
   }
 }

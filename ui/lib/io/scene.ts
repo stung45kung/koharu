@@ -48,6 +48,11 @@ import { useSelectionStore } from '@/lib/stores/selectionStore'
 export const invalidateScene = () =>
   queryClient.invalidateQueries({ queryKey: getGetSceneJsonQueryKey() })
 
+// Undo / redo can also revert character & speaker edits (see
+// `ProjectSession::undo`). Literal key to avoid importing `lib/characters`.
+const invalidateCharacters = () =>
+  queryClient.invalidateQueries({ queryKey: ['/api/v1/characters'] })
+
 const invalidateConfig = () => queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() })
 
 const invalidateLlm = () => queryClient.invalidateQueries({ queryKey: getGetCurrentLlmQueryKey() })
@@ -72,14 +77,14 @@ export async function applyOp(op: Op): Promise<void> {
 export async function undoOp(): Promise<void> {
   await enqueueHistoryMutation(async () => {
     await undo()
-    await invalidateScene()
+    await Promise.all([invalidateScene(), invalidateCharacters()])
   })
 }
 
 export async function redoOp(): Promise<void> {
   await enqueueHistoryMutation(async () => {
     await redo()
-    await invalidateScene()
+    await Promise.all([invalidateScene(), invalidateCharacters()])
   })
 }
 

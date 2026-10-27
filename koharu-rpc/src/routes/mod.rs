@@ -9,6 +9,7 @@ pub mod downloads;
 pub mod fonts;
 pub mod glossary;
 pub mod history;
+pub mod library;
 pub mod llm;
 pub mod meta;
 pub mod operations;

@@ -141,6 +141,30 @@ expression: paths
         ],
     ),
     (
+        "/library",
+        [
+            "get",
+        ],
+    ),
+    (
+        "/library/apply",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/library/delete",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/library/save",
+        [
+            "post",
+        ],
+    ),
+    (
         "/llm/catalog",
         [
             "get",
@@ -263,6 +287,12 @@ expression: paths
         [
             "get",
             "put",
+        ],
+    ),
+    (
+        "/typesetting/reset-block-styles",
+        [
+            "post",
         ],
     ),
 ]

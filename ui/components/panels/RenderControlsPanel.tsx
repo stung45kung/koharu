@@ -8,6 +8,7 @@ import {
   ItalicIcon,
   MinusIcon,
   PlusIcon,
+  RotateCcwIcon,
   SquareIcon,
 } from 'lucide-react'
 import { type ComponentType, useMemo, useRef, useEffect, useState } from 'react'
@@ -54,7 +55,7 @@ import {
 import { applyOp, invalidateScene, queueAutoRender } from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
 import { speakerOf, useCharacters } from '@/lib/characters'
-import { useTypesetting } from '@/lib/typesetting'
+import { resetBlockStyles, useTypesetting } from '@/lib/typesetting'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
 import { cn } from '@/lib/utils'
@@ -386,6 +387,26 @@ export function RenderControlsPanel() {
     })()
   }
 
+  /** Selected blocks (or every block on the page) forget their own style. */
+  const resetStyles = () => {
+    if (!page) return
+    const targets = (selectedNodes.length > 0 ? selectedNodes : textNodes).filter(
+      (n) => n.data.style,
+    )
+    if (targets.length === 0) return
+    void (async () => {
+      await resetBlockStyles(
+        page.id,
+        targets.map((n) => n.id),
+      )
+      await invalidateScene()
+      queueAutoRender(page.id)
+    })()
+  }
+  const resettableCount = (selectedNodes.length > 0 ? selectedNodes : textNodes).filter(
+    (n) => n.data.style,
+  ).length
+
   const applyStyleToAll = (updates: Partial<TextStyle>) => {
     applyStyleToNodes(textNodes, updates, 'Bulk style update')
   }
@@ -466,7 +487,27 @@ export function RenderControlsPanel() {
         hasSelection={!!selectedNode}
       />
       {/* Scope */}
-      <div className='flex items-center justify-end'>
+      <div className='flex items-center justify-between gap-2'>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='ghost'
+              size='xs'
+              className='h-6 gap-1 px-1.5 text-[10px] text-muted-foreground'
+              data-testid='render-reset-style'
+              disabled={resettableCount === 0}
+              onClick={resetStyles}
+            >
+              <RotateCcwIcon className='size-3' />
+              {t('render.resetStyle')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side='bottom' className='max-w-60 text-xs'>
+            {selectedNodes.length > 0
+              ? t('render.resetStyleHintSelected')
+              : t('render.resetStyleHintAll')}
+          </TooltipContent>
+        </Tooltip>
         <span
           data-testid='render-scope-indicator'
           className={cn(

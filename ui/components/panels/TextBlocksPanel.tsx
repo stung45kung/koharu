@@ -3,6 +3,7 @@
 import {
   BookOpenIcon,
   CheckCheckIcon,
+  LibraryIcon,
   Languages,
   LoaderCircleIcon,
   Trash2Icon,
@@ -15,6 +16,7 @@ import { useTranslation } from 'react-i18next'
 
 import { CharacterManagerDialog } from '@/components/CharacterManagerDialog'
 import { GlossaryDialog } from '@/components/GlossaryDialog'
+import { LibraryDialog } from '@/components/LibraryDialog'
 import {
   Accordion,
   AccordionContent,
@@ -81,6 +83,7 @@ export function TextBlocksPanel() {
   const confirm = useConfirmSpeakers()
   const [charactersOpen, setCharactersOpen] = useState(false)
   const [glossaryOpen, setGlossaryOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
 
   if (!page) {
     return (
@@ -251,6 +254,16 @@ export function TextBlocksPanel() {
           {t('glossary.button')}
         </Button>
         <Button
+          data-testid='textblocks-library'
+          variant='ghost'
+          size='xs'
+          onClick={() => setLibraryOpen(true)}
+          className='text-[11px]'
+        >
+          <LibraryIcon className='size-3' />
+          {t('library.button')}
+        </Button>
+        <Button
           data-testid='textblocks-guess-speakers'
           variant='ghost'
           size='xs'
@@ -353,6 +366,7 @@ export function TextBlocksPanel() {
         }
       />
       <GlossaryDialog open={glossaryOpen} onOpenChange={setGlossaryOpen} />
+      <LibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} />
     </div>
   )
 }

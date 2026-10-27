@@ -337,6 +337,7 @@ fn text_to_psd(
         rendered: text.sprite.as_ref().map(blob_ref_to_psd),
         rotation_deg,
         text_box,
+        text_color: None,
         font_prediction: text.font_prediction.as_ref().map(convert_prediction),
         source_direction: text.source_direction.map(convert_dir),
         rendered_direction: text.rendered_direction.map(convert_dir),

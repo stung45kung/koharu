@@ -68,7 +68,7 @@ async fn reset_block_styles(
             .iter()
             .filter(|id| {
                 page.nodes
-                    .get(id)
+                    .get(*id)
                     .is_some_and(|n| matches!(&n.kind, NodeKind::Text(t) if t.style.is_some()))
             })
             .map(|id| Op::UpdateNode {

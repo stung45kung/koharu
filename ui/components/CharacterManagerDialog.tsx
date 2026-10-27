@@ -10,6 +10,7 @@ import {
   Loader2Icon,
   PlusIcon,
   Trash2Icon,
+  WandSparklesIcon,
   XIcon,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -24,10 +25,12 @@ import { useListFonts } from '@/lib/api/default/default'
 import {
   EMPTY_CHARACTER_BOOK,
   newCharacterId,
+  suggestSpeechCues,
   useCharactersQuery,
   useSaveCharacters,
   type Character,
 } from '@/lib/characters'
+import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { useTypesetting } from '@/lib/typesetting'
 
 const MAX_NAME = 80
@@ -90,6 +93,8 @@ export function CharacterManagerDialog({
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initialized, setInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cuesBusy, setCuesBusy] = useState(false)
+  const [cuesInfo, setCuesInfo] = useState<string | null>(null)
 
   // Seed the draft once per opening, and only from loaded data: saving a
   // draft seeded before the fetch finished would wipe existing characters.
@@ -130,6 +135,21 @@ export function CharacterManagerDialog({
     setDraft(next)
     // Keep a neighbour selected so the editor doesn't go blank.
     setSelectedId(next[Math.min(index, next.length - 1)]?.id ?? null)
+  }
+
+  const draftCues = async (id: string) => {
+    setCuesBusy(true)
+    setCuesInfo(null)
+    setError(null)
+    try {
+      const res = await suggestSpeechCues(id, useEditorUiStore.getState().selectedLanguage)
+      update(id, { speechCues: res.speechCues })
+      setCuesInfo(t('characters.speechCuesDrafted', { count: res.linesUsed }))
+    } catch (err) {
+      setError(String(err))
+    } finally {
+      setCuesBusy(false)
+    }
   }
 
   const handleSave = async () => {
@@ -512,9 +532,29 @@ export function CharacterManagerDialog({
                     onChange={(e) => update(selected.id, { speechCues: e.target.value })}
                     className='min-h-0 resize-none px-3 py-1.5 text-xs'
                   />
-                  <span className='text-[10px] text-muted-foreground'>
-                    {t('characters.speechCuesHint')}
-                  </span>
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <Button
+                      variant='outline'
+                      size='xs'
+                      className='text-[11px]'
+                      data-testid='character-speech-cues-draft'
+                      disabled={
+                        cuesBusy || !book.characters.some((c) => c.id === selected.id)
+                      }
+                      title={t('characters.speechCuesDraftHint')}
+                      onClick={() => void draftCues(selected.id)}
+                    >
+                      {cuesBusy ? (
+                        <Loader2Icon className='size-3 animate-spin' />
+                      ) : (
+                        <WandSparklesIcon className='size-3' />
+                      )}
+                      {t('characters.speechCuesDraft')}
+                    </Button>
+                    <span className='text-[10px] text-muted-foreground'>
+                      {cuesInfo ?? t('characters.speechCuesHint')}
+                    </span>
+                  </div>
                 </div>
                 {usage[selected.id] ? (
                   <p className='shrink-0 text-[10px] text-muted-foreground'>

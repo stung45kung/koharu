@@ -59,6 +59,12 @@ expression: paths
         ],
     ),
     (
+        "/characters/speech-cues",
+        [
+            "post",
+        ],
+    ),
+    (
         "/config",
         [
             "get",

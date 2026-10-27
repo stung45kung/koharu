@@ -3,27 +3,35 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 
 import { fetchApi } from '@/lib/api/fetch'
-import type { CharacterBook } from '@/lib/characters'
+import type { Character, CharacterBook } from '@/lib/characters'
+import type { GlossaryEntry } from '@/lib/glossary'
 import { queryClient } from '@/lib/queryClient'
 
 // Hand-written client for `/api/v1/library` (see
-// `koharu-rpc/src/routes/library.rs`): character + glossary presets shared
-// between projects.
+// `koharu-rpc/src/routes/library.rs`): characters and glossary terms kept
+// one by one, grouped by series, shared by all projects.
 
-export type PresetSummary = {
-  name: string
+export type LibraryCharacter = {
+  key: string
+  series: string
   updatedAtMs: number
-  characters: number
-  glossaryEntries: number
-  hasTypesetting: boolean
+  character: Character
 }
+
+export type LibraryTerm = {
+  key: string
+  series: string
+  updatedAtMs: number
+  entry: GlossaryEntry
+}
+
+export type Library = { characters: LibraryCharacter[]; terms: LibraryTerm[] }
 
 export type MergeOutcome = {
   charactersAdded: number
   charactersUpdated: number
   glossaryAdded: number
   glossaryUpdated: number
-  typesettingApplied: boolean
 }
 
 export const LIBRARY_URL = '/api/v1/library'
@@ -36,38 +44,38 @@ const post = <T>(url: string, body: unknown) =>
     body: JSON.stringify(body),
   })
 
-export const listPresets = () => fetchApi<PresetSummary[]>(LIBRARY_URL, { method: 'GET' })
-export const savePreset = (name: string) => post<PresetSummary>(`${LIBRARY_URL}/save`, { name })
-export const applyPreset = (name: string, applyTypesetting: boolean) =>
-  post<{ outcome: MergeOutcome; book: CharacterBook }>(`${LIBRARY_URL}/apply`, {
-    name,
-    applyTypesetting,
-  })
-export const deletePreset = (name: string) => post<boolean>(`${LIBRARY_URL}/delete`, { name })
+export const getLibrary = () => fetchApi<Library>(LIBRARY_URL, { method: 'GET' })
 
 export function useLibrary(enabled: boolean) {
-  return useQuery({ queryKey: libraryQueryKey, queryFn: listPresets, enabled, retry: false })
+  return useQuery({ queryKey: libraryQueryKey, queryFn: getLibrary, enabled, retry: false })
 }
 
-const refreshLibrary = () => queryClient.invalidateQueries({ queryKey: libraryQueryKey })
+const storeLibrary = (lib: Library) => queryClient.setQueryData(libraryQueryKey, lib)
 
-export function useSavePreset() {
-  return useMutation({ mutationFn: savePreset, onSuccess: refreshLibrary })
-}
-
-export function useDeletePreset() {
-  return useMutation({ mutationFn: deletePreset, onSuccess: refreshLibrary })
-}
-
-export function useApplyPreset() {
+export function useSaveToLibrary() {
   return useMutation({
-    mutationFn: ({ name, applyTypesetting }: { name: string; applyTypesetting: boolean }) =>
-      applyPreset(name, applyTypesetting),
+    mutationFn: (req: { series: string; characterIds: string[]; glossarySources: string[] }) =>
+      post<{ library: Library; added: number; updated: number }>(`${LIBRARY_URL}/save`, req),
+    onSuccess: (res) => storeLibrary(res.library),
+  })
+}
+
+export function useDeleteFromLibrary() {
+  return useMutation({
+    mutationFn: (req: { characterKeys: string[]; termKeys: string[] }) =>
+      post<Library>(`${LIBRARY_URL}/delete`, req),
+    onSuccess: storeLibrary,
+  })
+}
+
+export function useApplyFromLibrary() {
+  return useMutation({
+    mutationFn: (req: { characterKeys: string[]; termKeys: string[] }) =>
+      post<{ outcome: MergeOutcome; book: CharacterBook }>(`${LIBRARY_URL}/apply`, req),
     onSuccess: () =>
       Promise.all([
         queryClient.invalidateQueries({ queryKey: ['/api/v1/characters'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/v1/glossary'] }),
-        queryClient.invalidateQueries({ queryKey: ['/api/v1/typesetting'] }),
       ]),
   })
 }

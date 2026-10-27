@@ -30,6 +30,54 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(put_speakers))
         .routes(routes!(guess_speakers))
         .routes(routes!(confirm_speakers))
+        .routes(routes!(suggest_speech_cues))
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechCuesRequest {
+    pub character_id: CharacterId,
+    #[serde(default)]
+    pub target_language: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechCuesResponse {
+    /// Suggested cues (not saved).
+    pub speech_cues: String,
+    /// Confirmed lines the suggestion was made from.
+    pub lines_used: usize,
+}
+
+#[utoipa::path(
+    post,
+    path = "/characters/speech-cues",
+    request_body = SpeechCuesRequest,
+    responses((status = 200, body = SpeechCuesResponse))
+)]
+async fn suggest_speech_cues(
+    State(app): State<AppState>,
+    Json(req): Json<SpeechCuesRequest>,
+) -> ApiResult<Json<SpeechCuesResponse>> {
+    let session = app
+        .current_session()
+        .ok_or_else(|| ApiError::bad_request("no project open"))?;
+    if !app.llm.ready().await {
+        return Err(ApiError::bad_request("no LLM loaded"));
+    }
+    let out = koharu_app::speech_cues::suggest(
+        &session,
+        &app.llm,
+        req.character_id,
+        req.target_language.as_deref(),
+    )
+    .await
+    .map_err(|e| ApiError::bad_request(format!("{e:#}")))?;
+    Ok(Json(SpeechCuesResponse {
+        speech_cues: out.speech_cues,
+        lines_used: out.lines_used,
+    }))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]

@@ -75,6 +75,13 @@ export const putSpeakers = (nodeIds: string[], characterId: string | null) =>
 export const guessSpeakers = (pageId: string, targetLanguage?: string) =>
   fetchApi<GuessSpeakersResult>(GUESS_URL, jsonInit('POST', { pageId, targetLanguage }))
 
+/** LLM-drafted speech cues from the character's confirmed lines (not saved). */
+export const suggestSpeechCues = (characterId: string, targetLanguage?: string) =>
+  fetchApi<{ speechCues: string; linesUsed: number }>(
+    '/api/v1/characters/speech-cues',
+    jsonInit('POST', { characterId, targetLanguage }),
+  )
+
 export const confirmSpeakers = (nodeIds: string[]) =>
   fetchApi<CharacterBook>(CONFIRM_URL, jsonInit('POST', { nodeIds }))
 

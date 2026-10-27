@@ -1,55 +1,148 @@
 'use client'
 
-import { DownloadIcon, Loader2Icon, SaveIcon, Trash2Icon } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ArrowLeftIcon, ArrowRightIcon, Loader2Icon, Trash2Icon } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
 import { useScene } from '@/hooks/useScene'
+import { useCharacters } from '@/lib/characters'
+import { useGlossaryQuery } from '@/lib/glossary'
 import {
-  useApplyPreset,
-  useDeletePreset,
+  useApplyFromLibrary,
+  useDeleteFromLibrary,
   useLibrary,
-  useSavePreset,
-  type MergeOutcome,
+  useSaveToLibrary,
 } from '@/lib/library'
+import { cn } from '@/lib/utils'
 
 type Props = {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
+type Tab = 'characters' | 'terms'
+
+const SERIES_KEY = 'koharu.librarySeries'
+const ALL = '\u0000all'
+
+const norm = (s: string) => s.trim().toLowerCase()
+
+const loadSeries = (): string | null => {
+  try {
+    return localStorage.getItem(SERIES_KEY)
+  } catch {
+    return null
+  }
+}
+
+const storeSeries = (s: string) => {
+  try {
+    localStorage.setItem(SERIES_KEY, s)
+  } catch {
+    // Only a convenience.
+  }
+}
+
+function toggle(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  return next
+}
+
 /**
- * Series library: save this project's characters + glossary (+ typesetting
- * defaults) under a name, and load a saved set into another project.
+ * Central library: save chosen characters / glossary terms of this project
+ * (grouped by series) and add chosen library items to this project.
  */
 export function LibraryDialog({ open, onOpenChange }: Props) {
   const { t } = useTranslation()
   const { scene } = useScene()
+  const book = useCharacters()
+  const glossary = useGlossaryQuery().data?.entries ?? []
   const library = useLibrary(open)
-  const save = useSavePreset()
-  const apply = useApplyPreset()
-  const remove = useDeletePreset()
-  const [name, setName] = useState('')
-  const [applyTypesetting, setApplyTypesetting] = useState(false)
+  const save = useSaveToLibrary()
+  const apply = useApplyFromLibrary()
+  const remove = useDeleteFromLibrary()
+
+  const [tab, setTab] = useState<Tab>('characters')
+  const [series, setSeries] = useState('')
+  const [filter, setFilter] = useState(ALL)
+  const [search, setSearch] = useState('')
+  const [pickProject, setPickProject] = useState<Set<string>>(new Set())
+  const [pickLibrary, setPickLibrary] = useState<Set<string>>(new Set())
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   useEffect(() => {
-    if (open) {
-      setName((prev) => prev || scene?.project?.name || '')
-      setMessage(null)
-      setError(null)
-      setConfirmDelete(null)
-    }
+    if (!open) return
+    setSeries((prev) => prev || loadSeries() || scene?.project?.name || '')
+    setMessage(null)
+    setError(null)
   }, [open, scene?.project?.name])
 
-  const presets = library.data ?? []
-  const exists = presets.some((p) => p.name.toLowerCase() === name.trim().toLowerCase())
+  useEffect(() => {
+    setPickProject(new Set())
+    setPickLibrary(new Set())
+    setConfirmDelete(false)
+  }, [tab, open])
+
+  const lib = library.data ?? { characters: [], terms: [] }
+  const allSeries = useMemo(
+    () =>
+      [...new Set([...lib.characters, ...lib.terms].map((i) => i.series.trim()))].sort((a, b) =>
+        a.localeCompare(b),
+      ),
+    [lib],
+  )
+
+  // Project side.
+  const projectItems =
+    tab === 'characters'
+      ? book.characters.map((c) => ({ id: c.id, label: c.name, sub: '', name: c.name }))
+      : glossary.map((g) => ({
+          id: g.source,
+          label: g.source,
+          sub: g.target,
+          name: g.source,
+        }))
+  const inLibrary = (name: string) =>
+    tab === 'characters'
+      ? lib.characters.some(
+          (c) => norm(c.series) === norm(series) && norm(c.character.name) === norm(name),
+        )
+      : lib.terms.some((x) => norm(x.series) === norm(series) && norm(x.entry.source) === norm(name))
+
+  // Library side.
+  const libraryItems = (
+    tab === 'characters'
+      ? lib.characters.map((c) => ({
+          key: c.key,
+          series: c.series,
+          label: c.character.name,
+          sub: '',
+          name: c.character.name,
+        }))
+      : lib.terms.map((x) => ({
+          key: x.key,
+          series: x.series,
+          label: x.entry.source,
+          sub: x.entry.target,
+          name: x.entry.source,
+        }))
+  )
+    .filter((i) => filter === ALL || norm(i.series) === norm(filter))
+    .filter(
+      (i) => !search.trim() || `${i.label} ${i.sub}`.toLowerCase().includes(norm(search)),
+    )
+    .sort((a, b) => a.series.localeCompare(b.series) || a.label.localeCompare(b.label))
+  const inProject = (name: string) =>
+    tab === 'characters'
+      ? book.characters.some((c) => norm(c.name) === norm(name))
+      : glossary.some((g) => norm(g.source) === norm(name))
 
   const run = async (fn: () => Promise<string>) => {
     setError(null)
@@ -61,158 +154,243 @@ export function LibraryDialog({ open, onOpenChange }: Props) {
     }
   }
 
-  const describe = (o: MergeOutcome) =>
-    t('library.applied', {
-      added: o.charactersAdded,
-      updated: o.charactersUpdated,
-      gAdded: o.glossaryAdded,
-      gUpdated: o.glossaryUpdated,
-    }) + (o.typesettingApplied ? ` ${t('library.typesettingApplied')}` : '')
+  const saveSelected = () =>
+    void run(async () => {
+      storeSeries(series.trim())
+      const ids = [...pickProject]
+      const res = await save.mutateAsync({
+        series: series.trim(),
+        characterIds: tab === 'characters' ? ids : [],
+        glossarySources: tab === 'terms' ? ids : [],
+      })
+      setPickProject(new Set())
+      return t('library.savedItems', { added: res.added, updated: res.updated })
+    })
+
+  const addSelected = () =>
+    void run(async () => {
+      const keys = [...pickLibrary]
+      const res = await apply.mutateAsync({
+        characterKeys: tab === 'characters' ? keys : [],
+        termKeys: tab === 'terms' ? keys : [],
+      })
+      setPickLibrary(new Set())
+      const o = res.outcome
+      return tab === 'characters'
+        ? t('library.addedCharacters', { added: o.charactersAdded, updated: o.charactersUpdated })
+        : t('library.addedTerms', { added: o.glossaryAdded, updated: o.glossaryUpdated })
+    })
+
+  const deleteSelected = () =>
+    void run(async () => {
+      const keys = [...pickLibrary]
+      await remove.mutateAsync({
+        characterKeys: tab === 'characters' ? keys : [],
+        termKeys: tab === 'terms' ? keys : [],
+      })
+      setPickLibrary(new Set())
+      setConfirmDelete(false)
+      return t('library.deletedItems', { count: keys.length })
+    })
+
+  const listClass = 'min-h-0 flex-1 overflow-y-auto rounded-md p-1 ring-1 ring-border'
+  const rowClass =
+    'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs hover:bg-accent'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className='flex max-h-[85vh] w-[95vw] max-w-2xl flex-col gap-3 sm:max-w-2xl'>
+      <DialogContent
+        className='flex h-[85vh] w-[95vw] max-w-5xl flex-col gap-3 sm:max-w-5xl'
+        data-testid='library-dialog'
+      >
         <div className='shrink-0 pr-6'>
           <DialogTitle>{t('library.title')}</DialogTitle>
           <DialogDescription className='mt-1 text-xs'>{t('library.description')}</DialogDescription>
         </div>
 
-        {/* Save current project */}
-        <div className='flex shrink-0 flex-col gap-1.5 rounded-md p-2 ring-1 ring-border'>
-          <span className='text-xs font-medium'>{t('library.saveTitle')}</span>
-          <div className='flex items-center gap-2'>
-            <Input
-              data-testid='library-name'
-              value={name}
-              maxLength={80}
-              placeholder={t('library.namePlaceholder')}
-              onChange={(e) => setName(e.target.value)}
-              className='h-8 text-sm'
-            />
+        <div className='flex shrink-0 gap-1'>
+          {(['characters', 'terms'] as Tab[]).map((k) => (
             <Button
-              size='sm'
-              data-testid='library-save'
-              disabled={!name.trim() || save.isPending}
-              onClick={() =>
-                void run(async () => {
-                  const saved = await save.mutateAsync(name.trim())
-                  return t('library.saved', {
-                    name: saved.name,
-                    characters: saved.characters,
-                    glossary: saved.glossaryEntries,
-                  })
-                })
-              }
+              key={k}
+              size='xs'
+              variant={tab === k ? 'default' : 'outline'}
+              data-testid={`library-tab-${k}`}
+              onClick={() => setTab(k)}
             >
-              {save.isPending ? (
-                <Loader2Icon className='size-3.5 animate-spin' />
-              ) : (
-                <SaveIcon className='size-3.5' />
-              )}
-              {exists ? t('library.overwrite') : t('library.save')}
+              {t(`library.tab.${k}`)}
             </Button>
-          </div>
-          <p className='text-[10px] text-muted-foreground'>{t('library.saveHint')}</p>
+          ))}
         </div>
 
-        {/* Saved presets */}
-        <div className='flex min-h-0 flex-1 flex-col gap-1.5'>
-          <div className='flex items-center justify-between gap-2'>
-            <span className='text-xs font-medium'>{t('library.listTitle')}</span>
-            <label className='flex items-center gap-1.5 text-[11px] text-muted-foreground'>
-              <Switch
-                size='sm'
-                data-testid='library-apply-typesetting'
-                checked={applyTypesetting}
-                onCheckedChange={setApplyTypesetting}
+        <div className='grid min-h-0 flex-1 grid-cols-[1fr_auto_1fr] gap-3'>
+          {/* This project */}
+          <div className='flex min-h-0 flex-col gap-1.5'>
+            <span className='text-xs font-medium'>{t('library.thisProject')}</span>
+            <div className={listClass} data-testid='library-project-list'>
+              {projectItems.length === 0 && (
+                <p className='p-2 text-xs text-muted-foreground'>{t('library.projectEmpty')}</p>
+              )}
+              {projectItems.map((i) => (
+                <label key={i.id} className={rowClass}>
+                  <input
+                    type='checkbox'
+                    className='size-3.5 shrink-0 accent-primary'
+                    checked={pickProject.has(i.id)}
+                    onChange={() => setPickProject((s) => toggle(s, i.id))}
+                  />
+                  <span className='min-w-0 flex-1 truncate'>
+                    {i.label}
+                    {i.sub && <span className='text-muted-foreground'> → {i.sub}</span>}
+                  </span>
+                  {inLibrary(i.name) && (
+                    <span className='shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground'>
+                      {t('library.badgeInLibrary')}
+                    </span>
+                  )}
+                </label>
+              ))}
+            </div>
+            <div className='flex items-center gap-2'>
+              <Input
+                data-testid='library-series'
+                value={series}
+                maxLength={80}
+                list='library-series-options'
+                placeholder={t('library.seriesPlaceholder')}
+                onChange={(e) => setSeries(e.target.value)}
+                className='h-7 text-xs'
               />
-              {t('library.applyTypesetting')}
-            </label>
+              <datalist id='library-series-options'>
+                {allSeries.map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </div>
           </div>
-          <div
-            className='min-h-24 flex-1 overflow-y-auto rounded-md p-1 ring-1 ring-border'
-            data-testid='library-list'
-          >
-            {library.isLoading && (
-              <p className='p-2 text-xs text-muted-foreground'>{t('library.loading')}</p>
-            )}
-            {!library.isLoading && presets.length === 0 && (
-              <p className='p-2 text-xs text-muted-foreground'>{t('library.empty')}</p>
-            )}
-            {presets.map((p) => (
-              <div
-                key={p.name}
-                className='flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-accent'
-                data-testid='library-item'
+
+          {/* Actions */}
+          <div className='flex flex-col items-center justify-center gap-2'>
+            <Button
+              size='xs'
+              data-testid='library-save-selected'
+              disabled={pickProject.size === 0 || save.isPending}
+              onClick={saveSelected}
+              title={t('library.saveSelected')}
+            >
+              {save.isPending ? (
+                <Loader2Icon className='size-3 animate-spin' />
+              ) : (
+                <ArrowRightIcon className='size-3' />
+              )}
+              {pickProject.size || ''}
+            </Button>
+            <Button
+              size='xs'
+              variant='outline'
+              data-testid='library-add-selected'
+              disabled={pickLibrary.size === 0 || apply.isPending || !scene}
+              onClick={addSelected}
+              title={t('library.addSelected')}
+            >
+              {apply.isPending ? (
+                <Loader2Icon className='size-3 animate-spin' />
+              ) : (
+                <ArrowLeftIcon className='size-3' />
+              )}
+              {pickLibrary.size || ''}
+            </Button>
+          </div>
+
+          {/* Library */}
+          <div className='flex min-h-0 flex-col gap-1.5'>
+            <span className='text-xs font-medium'>{t('library.library')}</span>
+            <div className='flex items-center gap-2'>
+              <select
+                data-testid='library-filter'
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+                className='h-7 rounded-md border border-input bg-transparent px-1 text-xs'
               >
-                <button
-                  type='button'
-                  className='min-w-0 flex-1 text-left'
-                  onClick={() => setName(p.name)}
-                >
-                  <div className='truncate font-medium'>{p.name}</div>
-                  <div className='text-[10px] text-muted-foreground'>
-                    {t('library.counts', {
-                      characters: p.characters,
-                      glossary: p.glossaryEntries,
-                    })}
-                    {p.hasTypesetting ? ` · ${t('library.hasTypesetting')}` : ''}
-                    {p.updatedAtMs ? ` · ${new Date(p.updatedAtMs).toLocaleDateString()}` : ''}
-                  </div>
-                </button>
+                <option value={ALL}>{t('library.allSeries')}</option>
+                {allSeries.map((s) => (
+                  <option key={s} value={s}>
+                    {s || t('library.noSeries')}
+                  </option>
+                ))}
+              </select>
+              <Input
+                value={search}
+                placeholder={t('library.search')}
+                onChange={(e) => setSearch(e.target.value)}
+                className='h-7 text-xs'
+              />
+            </div>
+            <div className={listClass} data-testid='library-list'>
+              {library.isLoading && (
+                <p className='p-2 text-xs text-muted-foreground'>{t('library.loading')}</p>
+              )}
+              {!library.isLoading && libraryItems.length === 0 && (
+                <p className='p-2 text-xs text-muted-foreground'>{t('library.empty')}</p>
+              )}
+              {libraryItems.map((i, idx) => (
+                <div key={i.key}>
+                  {(idx === 0 || libraryItems[idx - 1].series !== i.series) && (
+                    <div className='px-2 pt-1.5 pb-0.5 text-[10px] font-semibold text-muted-foreground uppercase'>
+                      {i.series || t('library.noSeries')}
+                    </div>
+                  )}
+                  <label className={rowClass}>
+                    <input
+                      type='checkbox'
+                      className='size-3.5 shrink-0 accent-primary'
+                      checked={pickLibrary.has(i.key)}
+                      onChange={() => setPickLibrary((s) => toggle(s, i.key))}
+                    />
+                    <span className='min-w-0 flex-1 truncate'>
+                      {i.label}
+                      {i.sub && <span className='text-muted-foreground'> → {i.sub}</span>}
+                    </span>
+                    {inProject(i.name) && (
+                      <span className='shrink-0 rounded bg-muted px-1 text-[10px] text-muted-foreground'>
+                        {t('library.badgeInProject')}
+                      </span>
+                    )}
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className='flex items-center justify-end gap-2'>
+              {confirmDelete ? (
                 <Button
-                  variant='outline'
                   size='xs'
-                  className='text-[11px]'
-                  data-testid='library-apply'
-                  disabled={!scene || apply.isPending}
-                  onClick={() =>
-                    void run(async () => {
-                      const res = await apply.mutateAsync({ name: p.name, applyTypesetting })
-                      return describe(res.outcome)
-                    })
-                  }
+                  variant='destructive'
+                  data-testid='library-delete-confirm'
+                  disabled={remove.isPending}
+                  onClick={deleteSelected}
                 >
-                  <DownloadIcon className='size-3' />
-                  {t('library.apply')}
+                  {t('library.confirmDelete', { count: pickLibrary.size })}
                 </Button>
-                {confirmDelete === p.name ? (
-                  <Button
-                    variant='destructive'
-                    size='xs'
-                    className='text-[11px]'
-                    data-testid='library-delete-confirm'
-                    onClick={() =>
-                      void run(async () => {
-                        await remove.mutateAsync(p.name)
-                        setConfirmDelete(null)
-                        return t('library.deleted', { name: p.name })
-                      })
-                    }
-                  >
-                    {t('library.confirmDelete')}
-                  </Button>
-                ) : (
-                  <Button
-                    aria-label={t('library.delete')}
-                    variant='ghost'
-                    size='icon-xs'
-                    className='text-rose-600 hover:text-rose-600'
-                    data-testid='library-delete'
-                    onClick={() => setConfirmDelete(p.name)}
-                  >
-                    <Trash2Icon className='size-3' />
-                  </Button>
-                )}
-              </div>
-            ))}
+              ) : (
+                <Button
+                  size='xs'
+                  variant='ghost'
+                  className={cn('text-rose-600 hover:text-rose-600')}
+                  data-testid='library-delete'
+                  disabled={pickLibrary.size === 0}
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2Icon className='size-3' />
+                  {t('library.delete')}
+                </Button>
+              )}
+            </div>
           </div>
-          <p className='text-[10px] text-muted-foreground'>{t('library.applyHint')}</p>
         </div>
 
         <div className='flex shrink-0 items-center justify-end gap-2'>
-          {message && <p className='mr-auto text-xs text-emerald-600'>{message}</p>}
-          {error && <p className='mr-auto text-xs text-rose-600'>{error}</p>}
+          <p className='mr-auto text-[10px] text-muted-foreground'>{t('library.hint')}</p>
+          {message && <p className='text-xs text-emerald-600'>{message}</p>}
+          {error && <p className='text-xs text-rose-600'>{error}</p>}
           <Button variant='ghost' size='sm' onClick={() => onOpenChange(false)}>
             {t('library.close')}
           </Button>

@@ -113,7 +113,7 @@ impl Engine for Model {
             } else {
                 koharu_renderer::segment::ThaiWordBreaking::Dictionary
             },
-            protected_words: protected_words(ctx),
+            protected_words: protected_words(&ctx),
         };
 
         // `render_page` is synchronous and CPU-bound. It runs inline on the

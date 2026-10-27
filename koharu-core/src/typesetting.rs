@@ -29,6 +29,39 @@ pub struct TypesettingDefaults {
     /// box. `true`: the size is a ceiling and long text shrinks to fit.
     #[serde(default)]
     pub shrink_to_fit: bool,
+    /// Outline for blocks without an outline of their own.
+    #[serde(default)]
+    pub stroke: Option<StrokeDefaults>,
+}
+
+/// A default text outline. Unset fields fall back to automatic values
+/// (colour contrasting with the text, width from the detected lettering or
+/// the text size).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, JsonSchema, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StrokeDefaults {
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub color: Option<[u8; 4]>,
+    /// Width in px on a page `reference_page_height` px tall (scaled to
+    /// other page heights like the default size).
+    #[serde(default)]
+    pub width_px: Option<f32>,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for StrokeDefaults {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            color: None,
+            width_px: None,
+        }
+    }
 }
 
 impl TypesettingDefaults {

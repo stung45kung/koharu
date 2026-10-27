@@ -43,4 +43,4 @@ pub use scene::{
     ProjectMeta, ProjectStyle, Scene, TextData, Transform,
 };
 pub use style::{TextAlign, TextShaderEffect, TextStrokeStyle, TextStyle};
-pub use typesetting::TypesettingDefaults;
+pub use typesetting::{StrokeDefaults, TypesettingDefaults};

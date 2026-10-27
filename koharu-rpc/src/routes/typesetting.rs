@@ -20,6 +20,7 @@ use crate::AppState;
 use crate::error::{ApiError, ApiResult};
 
 const MAX_FONT_SIZE_PX: f32 = 500.0;
+const MAX_STROKE_WIDTH_PX: f32 = 100.0;
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::default()
@@ -132,6 +133,13 @@ async fn put_typesetting(
     {
         return Err(ApiError::bad_request(format!(
             "font size must be between 0 and {MAX_FONT_SIZE_PX} px"
+        )));
+    }
+    if let Some(width) = req.stroke.as_ref().and_then(|s| s.width_px)
+        && !(width.is_finite() && width > 0.0 && width <= MAX_STROKE_WIDTH_PX)
+    {
+        return Err(ApiError::bad_request(format!(
+            "outline width must be between 0 and {MAX_STROKE_WIDTH_PX} px"
         )));
     }
     session

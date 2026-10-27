@@ -210,6 +210,11 @@ fn validate_characters(characters: Vec<Character>) -> Result<Vec<Character>, Str
                 c.name
             ));
         }
+        if let Some(stroke) = c.stroke.as_mut() {
+            stroke.width_px = stroke
+                .width_px
+                .filter(|w| w.is_finite() && *w > 0.0 && *w <= 100.0);
+        }
         c.speech_cues = c.speech_cues.trim().chars().take(1000).collect();
         c.font_size_px = c
             .font_size_px

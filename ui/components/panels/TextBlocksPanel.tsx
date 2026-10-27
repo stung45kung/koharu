@@ -365,6 +365,7 @@ export function TextBlocksPanel() {
                 italic: textNodes[selectedIndex].data.style?.effect?.italic ?? null,
                 textAlign: textNodes[selectedIndex].data.style?.textAlign ?? null,
                 pageHeight: page?.height ?? null,
+                stroke: textNodes[selectedIndex].data.style?.stroke ?? null,
               }
             : undefined
         }

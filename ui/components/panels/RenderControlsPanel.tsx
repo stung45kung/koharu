@@ -55,7 +55,13 @@ import {
 import { applyOp, invalidateScene, queueAutoRender } from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
 import { speakerOf, useCharacters } from '@/lib/characters'
-import { resetBlockStyles, useTypesetting } from '@/lib/typesetting'
+import {
+  layeredStroke,
+  resetBlockStyles,
+  scaleForPage,
+  useSaveTypesetting,
+  useTypesetting,
+} from '@/lib/typesetting'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
 import { cn } from '@/lib/utils'
@@ -112,6 +118,12 @@ const normalizeStroke = (stroke?: TextStrokeStyle | null): TextStrokeStyle => ({
   color: stroke?.color ?? DEFAULT_STROKE_COLOR,
   widthPx: stroke?.widthPx ?? null,
 })
+
+/** Automatic outline colour: black around light text, white around dark. */
+const autoStrokeColor = (text: number[]): number[] => {
+  const lum = 0.299 * (text[0] ?? 0) + 0.587 * (text[1] ?? 0) + 0.114 * (text[2] ?? 0)
+  return lum > 128 ? [0, 0, 0, 255] : [255, 255, 255, 255]
+}
 
 const normalizeEffect = (effect?: TextShaderEffect | null): TextShaderEffect => ({
   bold: effect?.bold ?? false,
@@ -171,10 +183,11 @@ export function RenderControlsPanel() {
   const appDefaultFont = usePreferencesStore((s) => s.defaultFont)
   const favoriteFonts = usePreferencesStore((s) => s.favoriteFonts)
   const toggleFavoriteFont = usePreferencesStore((s) => s.toggleFavoriteFont)
-  const projectColor = useTypesetting().color ?? null
+  const typesetting = useTypesetting()
+  const saveTypesetting = useSaveTypesetting()
+  const projectColor = typesetting.color ?? null
   const renderEffect = useEditorUiStore((s) => s.renderEffect)
   const setRenderEffect = useEditorUiStore((s) => s.setRenderEffect)
-  const setRenderStroke = useEditorUiStore((s) => s.setRenderStroke)
 
   const sortedFonts = useMemo(() => {
     return [...(availableFonts ?? [])].sort((a, b) => a.familyName.localeCompare(b.familyName))
@@ -307,7 +320,36 @@ export function RenderControlsPanel() {
       speakerColor,
     ),
   )
-  const currentStroke = normalizeStroke(selectedStyle?.stroke)
+  // Outline shown in the controls: the selected block's own outline, else
+  // what it actually renders with (speaker / project default, auto colour);
+  // with nothing selected, the project default (edited in place).
+  const currentStroke: TextStrokeStyle = (() => {
+    if (selectedNode) {
+      if (selectedNode.data.style?.stroke) return normalizeStroke(selectedNode.data.style.stroke)
+      const d = layeredStroke(
+        speakerOf(characterBook, selectedNode.id)?.stroke,
+        typesetting.stroke,
+      )
+      const rendered = renderedColorOf(
+        selectedNode.data.style,
+        selectedNode.data.fontPrediction,
+        projectColor,
+        speakerOf(characterBook, selectedNode.id)?.color,
+      )
+      return {
+        enabled: d?.enabled ?? true,
+        color: d?.color ?? autoStrokeColor(rendered),
+        widthPx:
+          d?.widthPx && page ? Number(scaleForPage(typesetting, d.widthPx, page.height).toFixed(1)) : null,
+      }
+    }
+    const p = typesetting.stroke
+    return {
+      enabled: p?.enabled ?? true,
+      color: p?.color ?? DEFAULT_STROKE_COLOR,
+      widthPx: p?.widthPx ?? null,
+    }
+  })()
   const currentStrokeColorHex = colorToHex(currentStroke.color ?? DEFAULT_STROKE_COLOR)
   const currentStrokeWidth = currentStroke.widthPx ?? DEFAULT_STROKE_WIDTH
   const currentEffect = normalizeEffect(selectedStyle?.effect ?? renderEffect)
@@ -419,11 +461,30 @@ export function RenderControlsPanel() {
 
   const applyStrokeSetting = (nextStroke: TextStrokeStyle) => {
     if (applyStyleToSelected({ stroke: normalizeStroke(nextStroke) })) return
-    setRenderStroke({
-      enabled: nextStroke.enabled ?? true,
-      color: (nextStroke.color ?? DEFAULT_STROKE_COLOR) as [number, number, number, number],
-      widthPx: nextStroke.widthPx ?? undefined,
-    })
+    // Nothing selected: this is the project's default outline.
+    void saveTypesetting
+      .mutateAsync({
+        ...typesetting,
+        referencePageHeight: typesetting.referencePageHeight ?? page?.height ?? null,
+        stroke: {
+          enabled: nextStroke.enabled ?? true,
+          color: nextStroke.color ?? typesetting.stroke?.color ?? null,
+          widthPx: nextStroke.widthPx ?? typesetting.stroke?.widthPx ?? null,
+        },
+      })
+      .then(() => {
+        if (page) queueAutoRender(page.id)
+      })
+      .catch((err) => useEditorUiStore.getState().showError(String(err)))
+  }
+
+  const clearProjectStroke = () => {
+    void saveTypesetting
+      .mutateAsync({ ...typesetting, stroke: null })
+      .then(() => {
+        if (page) queueAutoRender(page.id)
+      })
+      .catch((err) => useEditorUiStore.getState().showError(String(err)))
   }
 
   const updateStrokeWidth = (value: number) => {
@@ -943,7 +1004,32 @@ export function RenderControlsPanel() {
               <PlusIcon className='size-3' />
             </Button>
           </div>
+          {!selectedNode && typesetting.stroke && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant='ghost'
+                  size='icon-sm'
+                  className='size-7 shrink-0'
+                  data-testid='render-stroke-project-clear'
+                  onClick={clearProjectStroke}
+                >
+                  <RotateCcwIcon className='size-3' />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side='bottom' sideOffset={4} className='max-w-56 text-xs'>
+                {t('render.strokeProjectClear')}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
+        <span className='text-[10px] text-muted-foreground'>
+          {selectedNode
+            ? selectedNode.data.style?.stroke
+              ? t('render.strokeHintBlock')
+              : t('render.strokeHintInherited')
+            : t('render.strokeHintProject')}
+        </span>
       </div>
     </div>
   )

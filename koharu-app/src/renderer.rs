@@ -61,6 +61,9 @@ pub struct RenderBlockInput {
     pub speaker_effect: Option<TextShaderEffect>,
     /// Speaker alignment, used when the block has no alignment set.
     pub speaker_align: Option<koharu_core::TextAlign>,
+    /// Default outline for this block (speaker's over the project's, width
+    /// already scaled to the page), used when the block has no outline set.
+    pub default_stroke: Option<koharu_core::StrokeDefaults>,
 }
 
 /// Document-level render options (shared across all blocks).
@@ -322,6 +325,7 @@ impl Renderer {
                 global_stroke.as_ref(),
                 layout.font_size,
                 color,
+                block.default_stroke.as_ref(),
             );
 
             let rendered = self.renderer.render(
@@ -1021,6 +1025,7 @@ fn resolve_stroke_style(
     global_stroke: Option<&TextStrokeStyle>,
     font_size: f32,
     text_color: [u8; 4],
+    default_stroke: Option<&koharu_core::StrokeDefaults>,
 ) -> Option<RenderStrokeOptions> {
     if let Some(stroke) = block_stroke {
         if !stroke.enabled {
@@ -1044,19 +1049,25 @@ fn resolve_stroke_style(
                 .unwrap_or_else(|| default_stroke_width(font_size)),
         });
     }
-    let auto_stroke_color = contrasting_stroke_color(text_color);
-    if let Some(pred) = font_prediction
-        && pred.stroke_width_px > 0.0
-    {
-        return Some(RenderStrokeOptions {
-            color: auto_stroke_color,
-            width_px: pred.stroke_width_px,
-        });
+    if default_stroke.is_some_and(|d| !d.enabled) {
+        return None;
     }
-    Some(RenderStrokeOptions {
-        color: auto_stroke_color,
-        width_px: default_stroke_width(font_size),
-    })
+    let auto_stroke_color = contrasting_stroke_color(text_color);
+    let color = default_stroke
+        .and_then(|d| d.color)
+        .unwrap_or(auto_stroke_color);
+    // A width set for the project / speaker keeps every block's outline
+    // the same; otherwise use the detected lettering, then the text size.
+    let width_px = default_stroke
+        .and_then(|d| d.width_px)
+        .filter(|w| w.is_finite() && *w > 0.0)
+        .or_else(|| {
+            font_prediction
+                .map(|p| p.stroke_width_px)
+                .filter(|w| *w > 0.0)
+        })
+        .unwrap_or_else(|| default_stroke_width(font_size));
+    Some(RenderStrokeOptions { color, width_px })
 }
 
 /// Block style colour → speaker (character) colour → project default colour →
@@ -1393,7 +1404,7 @@ mod tests {
 
     #[test]
     fn default_stroke_color_uses_black_for_light_text() {
-        let stroke = resolve_stroke_style(None, None, None, 16.0, [255, 255, 255, 255])
+        let stroke = resolve_stroke_style(None, None, None, 16.0, [255, 255, 255, 255], None)
             .expect("default stroke should be present");
         assert_eq!(stroke.color, [0, 0, 0, 255]);
         assert_eq!(stroke.width_px, 1.6);
@@ -1406,11 +1417,53 @@ mod tests {
             stroke_width_px: 3.0,
             ..Default::default()
         };
-        let stroke =
-            resolve_stroke_style(Some(&prediction), None, None, 18.0, [255, 255, 255, 255])
-                .expect("predicted stroke should be present");
+        let stroke = resolve_stroke_style(
+            Some(&prediction),
+            None,
+            None,
+            18.0,
+            [255, 255, 255, 255],
+            None,
+        )
+        .expect("predicted stroke should be present");
         assert_eq!(stroke.color, [0, 0, 0, 255]);
         assert_eq!(stroke.width_px, 3.0);
+    }
+
+    #[test]
+    fn default_stroke_overrides_detected_width_and_auto_colour() {
+        let prediction = FontPrediction {
+            stroke_width_px: 7.0,
+            ..Default::default()
+        };
+        let d = koharu_core::StrokeDefaults {
+            enabled: true,
+            color: Some([10, 20, 30, 255]),
+            width_px: Some(2.5),
+        };
+        let s = resolve_stroke_style(
+            Some(&prediction),
+            None,
+            None,
+            40.0,
+            [0, 0, 0, 255],
+            Some(&d),
+        )
+        .unwrap();
+        assert_eq!((s.color, s.width_px), ([10, 20, 30, 255], 2.5));
+        // Only a width: colour stays automatic.
+        let w = koharu_core::StrokeDefaults {
+            color: None,
+            ..d.clone()
+        };
+        let s = resolve_stroke_style(None, None, None, 40.0, [0, 0, 0, 255], Some(&w)).unwrap();
+        assert_eq!((s.color, s.width_px), ([255, 255, 255, 255], 2.5));
+        // Turned off.
+        let off = koharu_core::StrokeDefaults {
+            enabled: false,
+            ..d
+        };
+        assert!(resolve_stroke_style(None, None, None, 40.0, [0, 0, 0, 255], Some(&off)).is_none());
     }
 
     #[test]
@@ -1425,6 +1478,7 @@ mod tests {
             None,
             18.0,
             [255, 255, 255, 255],
+            None,
         )
         .expect("explicit stroke should be present");
         assert_eq!(stroke.color, [255, 255, 255, 255]);
@@ -1751,6 +1805,7 @@ mod tests {
             speaker_font_size: None,
             speaker_effect: None,
             speaker_align: None,
+            default_stroke: None,
         }
     }
 

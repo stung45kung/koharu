@@ -10,7 +10,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use koharu_core::{
-    ImageRole, MaskRole, NodeDataPatch, NodePatch, Op, TextDataPatch, TextStyle, Transform,
+    ImageRole, MaskRole, NodeDataPatch, NodePatch, Op, StrokeDefaults, TextDataPatch, TextStyle,
+    Transform,
 };
 use koharu_llm::Language;
 
@@ -75,6 +76,11 @@ impl Engine for Model {
                     }),
                     speaker_effect: speaker.and_then(|c| c.effect()),
                     speaker_align: speaker.and_then(|c| c.text_align),
+                    default_stroke: layered_stroke(
+                        speaker.and_then(|c| c.stroke.as_ref()),
+                        ctx.typesetting.stroke.as_ref(),
+                        |w| ctx.typesetting.scale_size_for_page(w, page_height),
+                    ),
                 })
             })
             .collect();
@@ -177,6 +183,28 @@ inventory::submit! {
             Ok(Box::new(Model) as Box<dyn Engine>)
         }),
     }
+}
+
+/// The speaker's outline over the project's, field by field, with the width
+/// scaled to the page. `None` when neither sets one.
+pub(crate) fn layered_stroke(
+    speaker: Option<&StrokeDefaults>,
+    project: Option<&StrokeDefaults>,
+    scale: impl Fn(f32) -> Option<f32>,
+) -> Option<StrokeDefaults> {
+    if speaker.is_none() && project.is_none() {
+        return None;
+    }
+    Some(StrokeDefaults {
+        enabled: speaker.or(project).is_none_or(|s| s.enabled),
+        color: speaker
+            .and_then(|s| s.color)
+            .or_else(|| project.and_then(|p| p.color)),
+        width_px: speaker
+            .and_then(|s| s.width_px)
+            .or_else(|| project.and_then(|p| p.width_px))
+            .and_then(scale),
+    })
 }
 
 fn normalize_transform(t: Transform) -> Transform {

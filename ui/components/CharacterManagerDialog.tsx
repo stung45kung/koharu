@@ -46,6 +46,7 @@ type CharacterManagerDialogProps = {
     italic?: boolean | null
     textAlign?: 'left' | 'center' | 'right' | null
     pageHeight?: number | null
+    stroke?: { enabled?: boolean; color?: number[] | null; widthPx?: number | null } | null
   }
 }
 
@@ -325,6 +326,72 @@ export function CharacterManagerDialog({
                   ) : (
                     <span className='w-6' />
                   )}
+                  <span className='text-muted-foreground'>{t('characters.outline')}</span>
+                  <div className='flex flex-wrap items-center gap-2'>
+                    <label className='flex items-center gap-1 text-[11px] text-muted-foreground'>
+                      <input
+                        type='checkbox'
+                        data-testid='character-stroke-off'
+                        className='size-3.5 accent-primary'
+                        checked={selected.stroke?.enabled === false}
+                        onChange={(e) =>
+                          update(selected.id, {
+                            stroke: { ...(selected.stroke ?? {}), enabled: !e.target.checked },
+                          })
+                        }
+                      />
+                      {t('characters.outlineOff')}
+                    </label>
+                    <ColorPicker
+                      value={selected.stroke?.color ? rgbaToHex(selected.stroke.color) : '#ffffff'}
+                      onChange={(hex) =>
+                        update(selected.id, {
+                          stroke: {
+                            enabled: selected.stroke?.enabled ?? true,
+                            ...selected.stroke,
+                            color: hexToRgba(hex),
+                          },
+                        })
+                      }
+                      triggerTestId='character-stroke-color'
+                      className='size-7'
+                    />
+                    <Input
+                      data-testid='character-stroke-width'
+                      type='number'
+                      min={0.5}
+                      max={100}
+                      step={0.5}
+                      value={selected.stroke?.widthPx ?? ''}
+                      placeholder={t('characters.outlineWidthPlaceholder')}
+                      onChange={(e) => {
+                        const v = Number.parseFloat(e.target.value)
+                        update(selected.id, {
+                          stroke: {
+                            enabled: selected.stroke?.enabled ?? true,
+                            ...selected.stroke,
+                            widthPx: Number.isFinite(v) && v > 0 ? v : null,
+                          },
+                        })
+                      }}
+                      className='h-7 w-24 text-xs'
+                    />
+                    <span className='text-[10px] text-muted-foreground'>
+                      {selected.stroke?.color ? '' : t('characters.outlineAutoColor')}
+                    </span>
+                  </div>
+                  {selected.stroke ? (
+                    <Button
+                      aria-label={t('characters.clearOutline')}
+                      variant='ghost'
+                      size='icon-xs'
+                      onClick={() => update(selected.id, { stroke: null })}
+                    >
+                      <XIcon className='size-3' />
+                    </Button>
+                  ) : (
+                    <span className='w-6' />
+                  )}
                   <span className='text-muted-foreground'>{t('characters.effect')}</span>
                   <div className='flex items-center gap-1'>
                     {(
@@ -388,7 +455,8 @@ export function CharacterManagerDialog({
                         !selectedStyle.fontSize &&
                         selectedStyle.bold == null &&
                         selectedStyle.italic == null &&
-                        !selectedStyle.textAlign)
+                        !selectedStyle.textAlign &&
+                        !selectedStyle.stroke)
                     }
                     onClick={() => {
                       if (!selectedStyle) return
@@ -405,6 +473,22 @@ export function CharacterManagerDialog({
                         bold: selectedStyle.bold ?? selected.bold ?? null,
                         italic: selectedStyle.italic ?? selected.italic ?? null,
                         textAlign: selectedStyle.textAlign ?? selected.textAlign ?? null,
+                        stroke: selectedStyle.stroke
+                          ? {
+                              enabled: selectedStyle.stroke.enabled ?? true,
+                              color: selectedStyle.stroke.color ?? null,
+                              widthPx:
+                                selectedStyle.stroke.widthPx &&
+                                referencePageHeight &&
+                                selectedStyle.pageHeight
+                                  ? Math.round(
+                                      ((selectedStyle.stroke.widthPx * referencePageHeight) /
+                                        selectedStyle.pageHeight) *
+                                        10,
+                                    ) / 10
+                                  : (selectedStyle.stroke.widthPx ?? null),
+                            }
+                          : (selected.stroke ?? null),
                       })
                     }}
                   >

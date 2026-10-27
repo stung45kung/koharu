@@ -266,7 +266,11 @@
     "rotationLabel": "Rotation (°)",
     "resetStyle": "Reset style",
     "resetStyleHintSelected": "Remove the font, size, colour, bold/italic, stroke and alignment set on the selected blocks, so they follow their character and the project defaults again. Ctrl+Z undoes it.",
-    "resetStyleHintAll": "Remove the font, size, colour, bold/italic, stroke and alignment set on every block of this page, so they follow their character and the project defaults again. Ctrl+Z undoes it."
+    "resetStyleHintAll": "Remove the font, size, colour, bold/italic, stroke and alignment set on every block of this page, so they follow their character and the project defaults again. Ctrl+Z undoes it.",
+    "strokeProjectClear": "Back to automatic outline (colour opposite to the text, width from the lettering)",
+    "strokeHintProject": "Nothing selected: project default outline for every block without its own. Setting a width makes all outlines equal.",
+    "strokeHintInherited": "This block uses its character's / the project's outline. Changing it here gives the block its own.",
+    "strokeHintBlock": "This block has its own outline. Reset style makes it follow the character / project again."
   },
   "textBlocks": {
     "emptyPrompt": "Open an image to see text blocks.",
@@ -517,7 +521,12 @@
     "effect": "Style",
     "speechCues": "Speech cues (for Guess speakers)",
     "speechCuesPlaceholder": "e.g. calls herself 私, ends sentences with わ / のよ, calls others あんた",
-    "speechCuesHint": "Short notes on how this character talks in the original. Guess speakers uses these instead of the long profile below, which helps a lot with 3+ characters."
+    "speechCuesHint": "Short notes on how this character talks in the original. Guess speakers uses these instead of the long profile below, which helps a lot with 3+ characters.",
+    "outline": "Outline",
+    "outlineOff": "none",
+    "outlineWidthPlaceholder": "auto width",
+    "outlineAutoColor": "colour: auto",
+    "clearOutline": "Clear outline"
   },
   "typesetting": {
     "title": "Project defaults",

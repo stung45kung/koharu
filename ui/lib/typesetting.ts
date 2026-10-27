@@ -17,6 +17,36 @@ export type TypesettingDefaults = {
   color?: number[] | null
   /** false: keep the size fixed (may overflow). true: shrink long text to fit. */
   shrinkToFit?: boolean
+  /** Outline for blocks without their own. */
+  stroke?: StrokeDefaults | null
+}
+
+/** Default outline; unset colour / width stay automatic. */
+export type StrokeDefaults = {
+  enabled: boolean
+  color?: number[] | null
+  /** px on a page `referencePageHeight` tall (scaled like the size). */
+  widthPx?: number | null
+}
+
+/** Speaker outline over the project's, field by field (mirrors the renderer). */
+export function layeredStroke(
+  speaker: StrokeDefaults | null | undefined,
+  project: StrokeDefaults | null | undefined,
+): StrokeDefaults | null {
+  if (!speaker && !project) return null
+  return {
+    enabled: (speaker ?? project)?.enabled ?? true,
+    color: speaker?.color ?? project?.color ?? null,
+    widthPx: speaker?.widthPx ?? project?.widthPx ?? null,
+  }
+}
+
+/** Scale a reference-page px value to a page `pageHeight` tall. */
+export function scaleForPage(d: TypesettingDefaults, px: number, pageHeight: number): number {
+  const ref = d.referencePageHeight
+  if (!ref || ref <= 0 || pageHeight <= 0) return px
+  return (px * pageHeight) / ref
 }
 
 export const TYPESETTING_URL = '/api/v1/typesetting'

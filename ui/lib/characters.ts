@@ -5,6 +5,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useScene } from '@/hooks/useScene'
 import { fetchApi } from '@/lib/api/fetch'
 import { queryClient } from '@/lib/queryClient'
+import type { StrokeDefaults } from '@/lib/typesetting'
 
 // Hand-written client for `/api/v1/characters` (see
 // `koharu-rpc/src/routes/characters.rs`). Mirrors the Rust `CharacterBook`.
@@ -24,6 +25,8 @@ export type Character = {
   textAlign?: 'left' | 'center' | 'right' | null
   /** Short source-language cues used by speaker guessing. */
   speechCues?: string
+  /** Outline for this character's blocks (unset fields stay automatic). */
+  stroke?: StrokeDefaults | null
 }
 
 export type CharacterBook = {

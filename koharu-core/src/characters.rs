@@ -84,6 +84,10 @@ pub struct Character {
     /// speaker guessing instead of the long profile when set.
     #[serde(default)]
     pub speech_cues: String,
+    /// Outline for this character's blocks without an outline of their own.
+    /// `enabled: false` turns the outline off for them.
+    #[serde(default)]
+    pub stroke: Option<crate::StrokeDefaults>,
 }
 
 impl Character {

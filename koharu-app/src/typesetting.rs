@@ -53,6 +53,11 @@ mod tests {
             reference_page_height: Some(1518),
             color: Some([255, 255, 255, 255]),
             shrink_to_fit: true,
+            stroke: Some(koharu_core::StrokeDefaults {
+                enabled: true,
+                color: Some([0, 0, 0, 255]),
+                width_px: Some(3.0),
+            }),
         };
         save(&dir, &d).unwrap();
         assert_eq!(load(&dir), d);

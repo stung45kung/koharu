@@ -287,10 +287,16 @@ impl CharacterBook {
              same speaker, and a character's lines don't switch style.\n\
              - Only characters who actually take part in this scene speak; do not \
              spread labels over the whole list.\n\
-             - Precision matters more than coverage. A wrong label is worse than ?. \
+             - The list below is NOT everyone in the story. Side characters, crowds, \
+             passers-by, narration boxes and sound effects are often not listed. When \
+             the line comes from someone who is not in the list, answer X. Never put a \
+             listed character on a line just because they are the closest match: the \
+             line must really sound like them.\n\
+             - Precision matters more than coverage. A wrong label is worse than ? or X. \
              Answer ? whenever you are not confident.\n\n\
              For this task the \"translation\" of a block is ONLY its speaker label: \
-             after each tag write exactly one label (S1, S2, ... or ?) and nothing else.\n",
+             after each tag write exactly one label (S1, S2, ..., X for someone not in \
+             the list, or ? when unsure) and nothing else.\n",
         );
         out.push_str("\nCharacters:\n");
         for (i, c) in self.characters.iter().enumerate() {

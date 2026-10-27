@@ -200,6 +200,14 @@ pub async fn guess_page_speakers(
 
 /// Store `labels[i]` as the suggested speaker of `ids[i]` where allowed.
 /// Returns how many blocks changed.
+/// `?` (unsure) or `X` (a character not in the list), possibly decorated.
+fn is_no_listed_speaker(label: &str) -> bool {
+    let t = label
+        .trim()
+        .trim_matches(|c: char| c == '*' || c == '`' || c == '.' || c == '"');
+    t == "?" || t.eq_ignore_ascii_case("x")
+}
+
 fn apply_guesses(book: &mut CharacterBook, ids: &[NodeId], labels: &[String]) -> usize {
     let mut changed = 0;
     for (id, label) in ids.iter().zip(labels) {
@@ -208,8 +216,9 @@ fn apply_guesses(book: &mut CharacterBook, ids: &[NodeId], labels: &[String]) ->
         }
         let character = book.parse_speaker_label(label);
         // An unusable answer leaves an earlier guess in place rather than
-        // wiping it; only an explicit "?" clears a guess.
-        if character.is_none() && label.trim() != "?" {
+        // wiping it; only an explicit "?" (unsure) or "X" (someone not in
+        // the list) clears a guess.
+        if character.is_none() && !is_no_listed_speaker(label) {
             continue;
         }
         if book.suggest(*id, character) && character.is_some() {
@@ -225,6 +234,15 @@ mod tests {
     use uuid::Uuid;
 
     use super::*;
+
+    #[test]
+    fn x_and_question_mark_mean_no_listed_speaker() {
+        assert!(is_no_listed_speaker("X"));
+        assert!(is_no_listed_speaker(" x. "));
+        assert!(is_no_listed_speaker("?"));
+        assert!(!is_no_listed_speaker("S1"));
+        assert!(!is_no_listed_speaker("garbage"));
+    }
 
     fn node(n: u128) -> NodeId {
         NodeId(Uuid::from_u128(n))

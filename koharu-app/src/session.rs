@@ -61,8 +61,66 @@ pub struct ProjectSession {
     typesetting: RwLock<TypesettingDefaults>,
     /// Project glossary, mirrored to `glossary.toml`.
     glossary: RwLock<Glossary>,
+    /// Interleaving of scene ops and character-book edits, so one Ctrl+Z
+    /// undoes whichever happened last.
+    timeline: Mutex<Timeline>,
     /// Held for the lifetime of the session.
     _lock: File,
+}
+
+/// What a single undo / redo step reverted or re-applied.
+#[derive(Debug, Clone)]
+pub enum UndoStep {
+    /// A scene op (new epoch, the op that was applied).
+    Scene(u64, Op),
+    /// The character book (speakers / profiles) went back to an earlier
+    /// version — the scene epoch is unchanged.
+    Characters,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StepKind {
+    Scene,
+    Characters,
+}
+
+/// Max character-book versions kept for undo.
+const CHARACTER_UNDO_LIMIT: usize = 200;
+/// Max interleaved steps remembered (the scene history has its own cap).
+const TIMELINE_LIMIT: usize = 2000;
+
+#[derive(Default)]
+struct Timeline {
+    undo: std::collections::VecDeque<StepKind>,
+    redo: Vec<StepKind>,
+    /// Character book *before* each undoable character edit.
+    books_undo: std::collections::VecDeque<CharacterBook>,
+    /// Character book *before* each undone edit was reverted.
+    books_redo: Vec<CharacterBook>,
+}
+
+impl Timeline {
+    fn record(&mut self, kind: StepKind) {
+        self.undo.push_back(kind);
+        while self.undo.len() > TIMELINE_LIMIT {
+            self.undo.pop_front();
+        }
+        // A new action invalidates everything that could be redone.
+        self.redo.clear();
+        self.books_redo.clear();
+    }
+
+    fn record_book(&mut self, before: CharacterBook) {
+        self.books_undo.push_back(before);
+        if self.books_undo.len() > CHARACTER_UNDO_LIMIT {
+            self.books_undo.pop_front();
+            // Keep the step list consistent: forget the oldest book step.
+            if let Some(i) = self.undo.iter().position(|k| *k == StepKind::Characters) {
+                self.undo.remove(i);
+            }
+        }
+        self.record(StepKind::Characters);
+    }
 }
 
 impl ProjectSession {

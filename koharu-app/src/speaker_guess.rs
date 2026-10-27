@@ -11,7 +11,9 @@
 //! the instructions and simply yield no usable labels.
 
 use anyhow::{Result, bail};
-use koharu_core::{CharacterBook, NodeId, NodeKind, Page, PageId, Scene, Transform};
+use std::collections::HashMap;
+
+use koharu_core::{CharacterBook, CharacterId, NodeId, NodeKind, Page, PageId, Scene, Transform};
 
 use crate::llm;
 use crate::session::ProjectSession;
@@ -70,6 +72,55 @@ fn describe_position(t: &Transform, page_w: f32, page_h: f32) -> String {
     format!("{row} {col} (x {:.0}%, y {:.0}%)", cx * 100.0, cy * 100.0)
 }
 
+/// Confirmed example lines per character sent to speaker guessing.
+const EXAMPLES_PER_CHARACTER: usize = 5;
+
+/// Lines the user confirmed for each character (set by hand or accepted),
+/// taken from the pages nearest to `page` (the page itself excluded: its
+/// confirmed blocks are already listed as known). These show the model how
+/// each character talks in this particular work.
+fn confirmed_examples(
+    scene: &Scene,
+    page: PageId,
+    book: &CharacterBook,
+) -> HashMap<CharacterId, Vec<String>> {
+    let mut out: HashMap<CharacterId, Vec<String>> = HashMap::new();
+    let Some(current) = scene.pages.get_index_of(&page) else {
+        return out;
+    };
+    let mut order: Vec<usize> = (0..scene.pages.len()).filter(|i| *i != current).collect();
+    // Nearest pages first; on ties the earlier page.
+    order.sort_by_key(|i| (i.abs_diff(current), *i));
+    for i in order {
+        let Some((_, p)) = scene.pages.get_index(i) else {
+            continue;
+        };
+        for block in text_blocks(p) {
+            if book.is_suggested(block.id) {
+                continue;
+            }
+            let Some(id) = book.speakers.get(&block.id) else {
+                continue;
+            };
+            if book.character(*id).is_none() {
+                continue;
+            }
+            let lines = out.entry(*id).or_default();
+            let text = block.text.split_whitespace().collect::<Vec<_>>().join(" ");
+            if lines.len() < EXAMPLES_PER_CHARACTER && !lines.contains(&text) {
+                lines.push(text);
+            }
+        }
+        if book.characters.iter().all(|c| {
+            out.get(&c.id)
+                .is_some_and(|l| l.len() >= EXAMPLES_PER_CHARACTER)
+        }) {
+            break;
+        }
+    }
+    out
+}
+
 /// Number of trailing lines of the previous page sent as context.
 const PREVIOUS_PAGE_LINES: usize = 8;
 
@@ -111,7 +162,7 @@ pub async fn guess_page_speakers(
     if book.characters.is_empty() {
         bail!("add characters before guessing speakers");
     }
-    let (blocks, previous) = {
+    let (blocks, previous, examples) = {
         let scene = session.scene.read();
         let Some(current) = scene.page(page) else {
             bail!("page not found: {page}");
@@ -119,6 +170,7 @@ pub async fn guess_page_speakers(
         (
             text_blocks(current),
             previous_page_context(&scene, page, &book),
+            confirmed_examples(&scene, page, &book),
         )
     };
     let considered = blocks
@@ -132,7 +184,7 @@ pub async fn guess_page_speakers(
     let ids: Vec<NodeId> = blocks.iter().map(|b| b.id).collect();
     let layout: Vec<String> = blocks.iter().map(|b| b.position.clone()).collect();
     let texts: Vec<String> = blocks.into_iter().map(|b| b.text).collect();
-    let Some(prompt) = book.speaker_guess_prompt(&ids, &layout, &previous) else {
+    let Some(prompt) = book.speaker_guess_prompt(&ids, &layout, &previous, &examples) else {
         bail!("add characters before guessing speakers");
     };
     let labels = llm

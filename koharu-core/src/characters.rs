@@ -108,6 +108,8 @@ pub const MAX_DESCRIPTION_CHARS: usize = 4000;
 /// speech cues: every character is listed at once, and long translation
 /// notes drown the few lines that tell speakers apart.
 pub const MAX_GUESS_DESCRIPTION_CHARS: usize = 400;
+/// Cap for each example line (confirmed speech) sent to speaker guessing.
+pub const MAX_EXAMPLE_CHARS: usize = 80;
 /// Cap for speech cues sent to speaker guessing.
 pub const MAX_SPEECH_CUES_CHARS: usize = 600;
 
@@ -256,6 +258,7 @@ impl CharacterBook {
         blocks: &[NodeId],
         layout: &[String],
         previous: &[(String, String)],
+        examples: &std::collections::HashMap<CharacterId, Vec<String>>,
     ) -> Option<String> {
         if self.characters.is_empty() {
             return None;
@@ -267,7 +270,8 @@ impl CharacterBook {
              page. The blocks are given in reading order.\n\n\
              How to decide:\n\
              - Match how the line is spoken (self-reference, sentence endings, politeness, \
-             tone) against the character profiles.\n\
+             tone) against the character profiles. Lines a character really says in \
+             this work, when given, are the strongest evidence of how they talk.\n\
              - Follow the conversation: a question is usually answered by someone else; \
              blocks close together on the page are usually one exchange.\n\
              - Use the block positions to see which lines belong together.\n\
@@ -300,6 +304,17 @@ impl CharacterBook {
                 out.push_str(&format!("- S{}: {}\n", i + 1, name));
             } else {
                 out.push_str(&format!("- S{}: {} — {}\n", i + 1, name, desc));
+            }
+            if let Some(lines) = examples.get(&c.id).filter(|l| !l.is_empty()) {
+                let quoted: Vec<String> = lines
+                    .iter()
+                    .map(|l| format!("「{}」", one_line(&truncate_chars(l, MAX_EXAMPLE_CHARS))))
+                    .collect();
+                out.push_str(&format!(
+                    "  Lines S{} really says in this work: {}\n",
+                    i + 1,
+                    quoted.join(" ")
+                ));
             }
         }
         let known: Vec<String> = blocks
@@ -451,13 +466,38 @@ mod tests {
     use super::*;
 
     #[test]
+    fn guess_prompt_lists_confirmed_example_lines() {
+        let mut book = CharacterBook::default();
+        let a = character(1, "Ruruie", "");
+        let id = a.id;
+        book.set_characters(vec![a, character(2, "Man", "")]);
+        let mut examples = std::collections::HashMap::new();
+        examples.insert(
+            id,
+            vec![
+                "あんた、何してるのよ".to_string(),
+                "私に任せなさい".to_string(),
+            ],
+        );
+        let prompt = book
+            .speaker_guess_prompt(&[node(1)], &[], &[], &examples)
+            .unwrap();
+        assert!(prompt.contains(
+            "  Lines S1 really says in this work: 「あんた、何してるのよ」 「私に任せなさい」"
+        ));
+        assert!(!prompt.contains("Lines S2"));
+    }
+
+    #[test]
     fn guess_prompt_prefers_speech_cues_over_the_profile() {
         let mut book = CharacterBook::default();
         let mut a = character(1, "Ruruie", &"long translation notes ".repeat(50));
         a.speech_cues = "calls herself 私, ends with わ".into();
         let b = character(2, "Man", &"x".repeat(1000));
         book.set_characters(vec![a, b]);
-        let prompt = book.speaker_guess_prompt(&[node(1)], &[], &[]).unwrap();
+        let prompt = book
+            .speaker_guess_prompt(&[node(1)], &[], &[], &Default::default())
+            .unwrap();
         assert!(prompt.contains("- S1: Ruruie — calls herself 私, ends with わ"));
         assert!(!prompt.contains("long translation notes"));
         let man = prompt.lines().find(|l| l.starts_with("- S2")).unwrap();
@@ -626,7 +666,12 @@ mod tests {
         let mut book = book();
         let a = book.characters[0].id;
         assert_eq!(
-            CharacterBook::default().speaker_guess_prompt(&[node(1)], &[], &[]),
+            CharacterBook::default().speaker_guess_prompt(
+                &[node(1)],
+                &[],
+                &[],
+                &Default::default()
+            ),
             None
         );
 
@@ -639,7 +684,12 @@ mod tests {
         ];
         let previous = vec![("Akazukin".to_string(), "line\nbefore".to_string())];
         let prompt = book
-            .speaker_guess_prompt(&[node(1), node(2), node(3)], &layout, &previous)
+            .speaker_guess_prompt(
+                &[node(1), node(2), node(3)],
+                &layout,
+                &previous,
+                &Default::default(),
+            )
             .unwrap();
         assert!(prompt.contains("[1] top-right"));
         assert!(prompt.contains("[3] bottom-left"));

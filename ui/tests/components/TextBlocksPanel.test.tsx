@@ -11,6 +11,7 @@ import { useSelectionStore } from '@/lib/stores/selectionStore'
 
 import { renderWithQuery } from '../helpers'
 import { server } from '../msw/server'
+import { queryClient } from '@/lib/queryClient'
 
 function sceneWithTextNodes() {
   return {
@@ -48,6 +49,7 @@ describe('TextBlocksPanel', () => {
     useSelectionStore.getState().setPage('p1')
     useSelectionStore.getState().select('t2', false)
     useJobsStore.getState().clear()
+    queryClient.clear()
     useEditorUiStore.setState({ selectedLanguage: 'en' })
     usePreferencesStore.setState({
       customSystemPrompt: 'translate naturally',
@@ -187,5 +189,32 @@ describe('TextBlocksPanel', () => {
     expect(screen.getByTestId('textblocks-guess-hint')).toHaveTextContent(
       'characters.guessNeedsCharacters',
     )
+  })
+
+  it('deletes the corresponding text block when the delete button is clicked', async () => {
+    let lastOp: any = null
+
+    server.use(
+      http.get('/api/v1/scene.json', () => HttpResponse.json(sceneWithTextNodes())),
+      http.post('/api/v1/history/apply', async ({ request }) => {
+        lastOp = await request.json()
+        return HttpResponse.json({ epoch: 2 })
+      }),
+    )
+    renderWithQuery(<TextBlocksPanel />)
+
+    const block0 = await screen.findByTestId('textblock-trigger-0')
+    await userEvent.click(block0)
+    const button0 = await screen.findByTestId('textblock-delete-0')
+    await userEvent.click(button0)
+
+    expect(lastOp).toMatchObject({ removeNode: { id: 't1' } })
+
+    const block1 = await screen.findByTestId('textblock-trigger-1')
+    await userEvent.click(block1)
+    const button1 = await screen.findByTestId('textblock-delete-1')
+    await userEvent.click(button1)
+
+    expect(lastOp).toMatchObject({ removeNode: { id: 't2' } })
   })
 })

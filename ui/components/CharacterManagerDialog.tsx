@@ -1,6 +1,17 @@
 'use client'
 
-import { CopyIcon, Loader2Icon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
+import {
+  AlignCenterIcon,
+  AlignLeftIcon,
+  AlignRightIcon,
+  BoldIcon,
+  CopyIcon,
+  ItalicIcon,
+  Loader2Icon,
+  PlusIcon,
+  Trash2Icon,
+  XIcon,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -17,6 +28,7 @@ import {
   useSaveCharacters,
   type Character,
 } from '@/lib/characters'
+import { useTypesetting } from '@/lib/typesetting'
 
 const MAX_NAME = 80
 const MAX_DESCRIPTION = 4000
@@ -25,8 +37,19 @@ type CharacterManagerDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   /** Style of the currently selected text block, for "copy from block". */
-  selectedStyle?: { font?: string | null; color?: number[] | null }
+  selectedStyle?: {
+    font?: string | null
+    color?: number[] | null
+    /** Block size in px on its page. */
+    fontSize?: number | null
+    bold?: boolean | null
+    italic?: boolean | null
+    textAlign?: 'left' | 'center' | 'right' | null
+    pageHeight?: number | null
+  }
 }
+
+type Align = 'left' | 'center' | 'right'
 
 const rgbaToHex = (c: number[]) =>
   '#' +
@@ -61,6 +84,7 @@ export function CharacterManagerDialog({
   const book = query.data ?? EMPTY_CHARACTER_BOOK
   const save = useSaveCharacters()
   const { data: fonts = [] } = useListFonts()
+  const referencePageHeight = useTypesetting().referencePageHeight ?? null
   const [draft, setDraft] = useState<Character[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [initialized, setInitialized] = useState(false)
@@ -265,6 +289,91 @@ export function CharacterManagerDialog({
                   ) : (
                     <span className='w-6' />
                   )}
+                  <span className='text-muted-foreground'>{t('characters.size')}</span>
+                  <div className='flex items-center gap-2'>
+                    <Input
+                      data-testid='character-size'
+                      type='number'
+                      min={1}
+                      max={1000}
+                      step={0.5}
+                      value={selected.fontSizePx ?? ''}
+                      placeholder={t('characters.sizePlaceholder')}
+                      onChange={(e) => {
+                        const v = Number.parseFloat(e.target.value)
+                        update(selected.id, {
+                          fontSizePx: Number.isFinite(v) && v > 0 ? v : null,
+                        })
+                      }}
+                      className='h-7 w-28 text-xs'
+                    />
+                    <span className='text-[10px] text-muted-foreground'>
+                      {referencePageHeight
+                        ? t('characters.sizeHintRef', { height: referencePageHeight })
+                        : t('characters.sizeHint')}
+                    </span>
+                  </div>
+                  {selected.fontSizePx ? (
+                    <Button
+                      aria-label={t('characters.clearSize')}
+                      variant='ghost'
+                      size='icon-xs'
+                      onClick={() => update(selected.id, { fontSizePx: null })}
+                    >
+                      <XIcon className='size-3' />
+                    </Button>
+                  ) : (
+                    <span className='w-6' />
+                  )}
+                  <span className='text-muted-foreground'>{t('characters.effect')}</span>
+                  <div className='flex items-center gap-1'>
+                    {(
+                      [
+                        { key: 'bold', Icon: BoldIcon, label: t('render.effectBold') },
+                        { key: 'italic', Icon: ItalicIcon, label: t('render.effectItalic') },
+                      ] as const
+                    ).map(({ key, Icon, label }) => (
+                      <Button
+                        key={key}
+                        aria-label={label}
+                        aria-pressed={!!selected[key]}
+                        data-testid={`character-${key}`}
+                        variant={selected[key] ? 'default' : 'outline'}
+                        size='icon-xs'
+                        onClick={() => {
+                          const next = selected[key] ? null : true
+                          update(selected.id, key === 'bold' ? { bold: next } : { italic: next })
+                        }}
+                      >
+                        <Icon className='size-3' />
+                      </Button>
+                    ))}
+                    <span className='mx-1 h-4 w-px bg-border' />
+                    {(
+                      [
+                        { value: 'left', Icon: AlignLeftIcon, label: t('render.alignLeft') },
+                        { value: 'center', Icon: AlignCenterIcon, label: t('render.alignCenter') },
+                        { value: 'right', Icon: AlignRightIcon, label: t('render.alignRight') },
+                      ] as { value: Align; Icon: typeof AlignLeftIcon; label: string }[]
+                    ).map(({ value, Icon, label }) => (
+                      <Button
+                        key={value}
+                        aria-label={label}
+                        aria-pressed={selected.textAlign === value}
+                        data-testid={`character-align-${value}`}
+                        variant={selected.textAlign === value ? 'default' : 'outline'}
+                        size='icon-xs'
+                        onClick={() =>
+                          update(selected.id, {
+                            textAlign: selected.textAlign === value ? null : value,
+                          })
+                        }
+                      >
+                        <Icon className='size-3' />
+                      </Button>
+                    ))}
+                  </div>
+                  <span className='w-6' />
                 </div>
                 <div className='flex shrink-0 items-center gap-2'>
                   <Button
@@ -272,13 +381,32 @@ export function CharacterManagerDialog({
                     size='xs'
                     className='text-[11px]'
                     data-testid='character-copy-style'
-                    disabled={!selectedStyle || (!selectedStyle.font && !selectedStyle.color)}
-                    onClick={() =>
-                      update(selected.id, {
-                        font: selectedStyle?.font ?? selected.font ?? null,
-                        color: selectedStyle?.color ?? selected.color ?? null,
-                      })
+                    disabled={
+                      !selectedStyle ||
+                      (!selectedStyle.font &&
+                        !selectedStyle.color &&
+                        !selectedStyle.fontSize &&
+                        selectedStyle.bold == null &&
+                        selectedStyle.italic == null &&
+                        !selectedStyle.textAlign)
                     }
+                    onClick={() => {
+                      if (!selectedStyle) return
+                      // Block sizes are page px; character sizes are measured
+                      // on the project's reference page height.
+                      const size =
+                        selectedStyle.fontSize && referencePageHeight && selectedStyle.pageHeight
+                          ? (selectedStyle.fontSize * referencePageHeight) / selectedStyle.pageHeight
+                          : selectedStyle.fontSize
+                      update(selected.id, {
+                        font: selectedStyle.font ?? selected.font ?? null,
+                        color: selectedStyle.color ?? selected.color ?? null,
+                        fontSizePx: size ? Math.round(size * 10) / 10 : (selected.fontSizePx ?? null),
+                        bold: selectedStyle.bold ?? selected.bold ?? null,
+                        italic: selectedStyle.italic ?? selected.italic ?? null,
+                        textAlign: selectedStyle.textAlign ?? selected.textAlign ?? null,
+                      })
+                    }}
                   >
                     <CopyIcon className='size-3' />
                     {t('characters.copyStyle')}

@@ -34,7 +34,13 @@ pub struct TypesettingDefaults {
 impl TypesettingDefaults {
     /// Default text size for a page `page_height` px tall, if one is set.
     pub fn font_size_for_page(&self, page_height: u32) -> Option<f32> {
-        let size = self.font_size_px.filter(|s| s.is_finite() && *s > 0.0)?;
+        self.scale_size_for_page(self.font_size_px?, page_height)
+    }
+
+    /// Scale a size tuned on the reference page height to a page
+    /// `page_height` px tall (used for character sizes too).
+    pub fn scale_size_for_page(&self, size: f32, page_height: u32) -> Option<f32> {
+        let size = Some(size).filter(|s| s.is_finite() && *s > 0.0)?;
         match self.reference_page_height {
             Some(reference) if reference > 0 && page_height > 0 => {
                 Some((size * page_height as f32 / reference as f32).max(1.0))
@@ -60,6 +66,21 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(bad.font_size_for_page(1500), None);
+    }
+
+    #[test]
+    fn character_sizes_scale_like_the_default() {
+        let d = TypesettingDefaults {
+            font_size_px: None,
+            reference_page_height: Some(1000),
+            ..Default::default()
+        };
+        assert_eq!(d.scale_size_for_page(20.0, 2000), Some(40.0));
+        assert_eq!(d.scale_size_for_page(0.0, 2000), None);
+        assert_eq!(
+            TypesettingDefaults::default().scale_size_for_page(20.0, 2000),
+            Some(20.0)
+        );
     }
 
     #[test]

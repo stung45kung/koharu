@@ -54,6 +54,13 @@ pub struct RenderBlockInput {
     /// Colour of the block's speaker, used when the block has no style of
     /// its own. Wins over the project default colour.
     pub speaker_color: Option<[u8; 4]>,
+    /// Speaker text size (already scaled to this page), used when the block
+    /// has no size of its own. Wins over the project default size.
+    pub speaker_font_size: Option<f32>,
+    /// Speaker faux bold / italic, used when the block has no effect set.
+    pub speaker_effect: Option<TextShaderEffect>,
+    /// Speaker alignment, used when the block has no alignment set.
+    pub speaker_align: Option<koharu_core::TextAlign>,
 }
 
 /// Document-level render options (shared across all blocks).
@@ -272,7 +279,7 @@ impl Renderer {
         apply_default_font_families(&mut style.font_families, translation);
 
         let font = self.select_font(&style)?;
-        let block_effect = style.effect.unwrap_or(*effect);
+        let block_effect = style.effect.or(block.speaker_effect).unwrap_or(*effect);
         let color = resolve_text_color(
             block.style.as_ref(),
             &style,
@@ -287,6 +294,7 @@ impl Renderer {
         // typesetting convention. Explicit `style.text_align` wins if set.
         let align = style
             .text_align
+            .or(block.speaker_align)
             .map(core_align_to_renderer)
             .unwrap_or(RendererTextAlign::Center);
         let layout_box = resolved_box.layout_box;
@@ -298,6 +306,8 @@ impl Renderer {
         if let Some(target_language) = target_language {
             layout_builder = layout_builder.with_hyphenation_language_tag(target_language);
         }
+        // The speaker's size takes the project default's place.
+        let default_font_size = block.speaker_font_size.or(default_font_size);
         let explicit_size = fixed_font_size(
             style.font_size,
             default_font_size,
@@ -1738,6 +1748,9 @@ mod tests {
             lock_layout_box: false,
             speaker_font: None,
             speaker_color: None,
+            speaker_font_size: None,
+            speaker_effect: None,
+            speaker_align: None,
         }
     }
 

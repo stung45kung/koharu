@@ -210,6 +210,13 @@ fn validate_characters(characters: Vec<Character>) -> Result<Vec<Character>, Str
                 c.name
             ));
         }
+        c.font_size_px = c
+            .font_size_px
+            .filter(|s| s.is_finite() && (1.0..=1000.0).contains(s));
+        c.font = c
+            .font
+            .map(|f| f.trim().to_string())
+            .filter(|f| !f.is_empty());
         out.push(c);
     }
     Ok(out)

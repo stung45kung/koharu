@@ -47,6 +47,7 @@ impl Engine for Model {
             None => None,
         };
 
+        let page_height = ctx.scene.page(ctx.page).map(|p| p.height).unwrap_or(h);
         // Build renderer input from every text node with a non-empty translation.
         let nodes = text_nodes(ctx.scene, ctx.page);
         let inputs: Vec<RenderBlockInput> = nodes
@@ -68,6 +69,12 @@ impl Engine for Model {
                     lock_layout_box: t.lock_layout_box,
                     speaker_font: speaker.and_then(|c| c.font.clone()),
                     speaker_color: speaker.and_then(|c| c.color),
+                    speaker_font_size: speaker.and_then(|c| {
+                        ctx.typesetting
+                            .scale_size_for_page(c.font_size_px?, page_height)
+                    }),
+                    speaker_effect: speaker.and_then(|c| c.effect()),
+                    speaker_align: speaker.and_then(|c| c.text_align),
                 })
             })
             .collect();
@@ -82,7 +89,6 @@ impl Engine for Model {
             .clone()
             .filter(|f| !f.trim().is_empty())
             .or_else(|| ctx.options.default_font.clone());
-        let page_height = ctx.scene.page(ctx.page).map(|p| p.height).unwrap_or(h);
         let page_opts = PageRenderOptions {
             shader_effect: Default::default(),
             shader_stroke: None,

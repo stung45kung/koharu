@@ -343,6 +343,11 @@ export function TextBlocksPanel() {
             ? {
                 font: textNodes[selectedIndex].data.style?.fontFamilies?.[0] ?? null,
                 color: textNodes[selectedIndex].data.style?.color ?? null,
+                fontSize: textNodes[selectedIndex].data.style?.fontSize ?? null,
+                bold: textNodes[selectedIndex].data.style?.effect?.bold ?? null,
+                italic: textNodes[selectedIndex].data.style?.effect?.italic ?? null,
+                textAlign: textNodes[selectedIndex].data.style?.textAlign ?? null,
+                pageHeight: page?.height ?? null,
               }
             : undefined
         }

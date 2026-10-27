@@ -17,6 +17,11 @@ export type Character = {
   font?: string | null
   /** RGBA text colour for this character's blocks. */
   color?: number[] | null
+  /** Text size in px, measured on the project's reference page height. */
+  fontSizePx?: number | null
+  bold?: boolean | null
+  italic?: boolean | null
+  textAlign?: 'left' | 'center' | 'right' | null
 }
 
 export type CharacterBook = {

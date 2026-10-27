@@ -65,6 +65,33 @@ pub struct Character {
     /// has no style of its own.
     #[serde(default)]
     pub color: Option<[u8; 4]>,
+    /// Text size in px for this character's blocks without a size of their
+    /// own. Measured on the project's reference page height (see
+    /// `TypesettingDefaults`), so it scales with the page like the project
+    /// default size. Wins over the project default size.
+    #[serde(default)]
+    pub font_size_px: Option<f32>,
+    /// Faux bold / italic for blocks without an effect of their own.
+    #[serde(default)]
+    pub bold: Option<bool>,
+    #[serde(default)]
+    pub italic: Option<bool>,
+    /// Alignment for blocks without an alignment of their own.
+    #[serde(default)]
+    pub text_align: Option<crate::TextAlign>,
+}
+
+impl Character {
+    /// Faux bold / italic, if the character sets either.
+    pub fn effect(&self) -> Option<crate::TextShaderEffect> {
+        if self.bold.is_none() && self.italic.is_none() {
+            return None;
+        }
+        Some(crate::TextShaderEffect {
+            italic: self.italic.unwrap_or(false),
+            bold: self.bold.unwrap_or(false),
+        })
+    }
 }
 
 pub const CHARACTER_BOOK_VERSION: u32 = 1;
@@ -397,6 +424,30 @@ fn truncate_chars(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn effect_only_when_bold_or_italic_is_set() {
+        let mut c = Character::default();
+        assert_eq!(c.effect(), None);
+        c.bold = Some(true);
+        assert_eq!(
+            c.effect(),
+            Some(crate::TextShaderEffect {
+                italic: false,
+                bold: true
+            })
+        );
+    }
+
+    #[test]
+    fn old_character_files_still_parse() {
+        let book: CharacterBook = serde_json::from_str(
+            r#"{"version":1,"characters":[{"id":"00000000-0000-0000-0000-000000000001","name":"A"}]}"#,
+        )
+        .unwrap();
+        assert_eq!(book.characters[0].font_size_px, None);
+        assert_eq!(book.characters[0].text_align, None);
+    }
 
     fn node(n: u128) -> NodeId {
         NodeId(Uuid::from_u128(n))

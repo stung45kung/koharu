@@ -496,8 +496,14 @@
     "styleNotSet": "not set (project default)",
     "clearFont": "Clear font",
     "clearColor": "Clear color",
-    "copyStyle": "Use selected block's font & color",
-    "styleHint": "Used for this character's blocks that have no font or color of their own. Re-render to apply."
+    "copyStyle": "Use selected block's style",
+    "styleHint": "Used for this character's blocks that don't set these themselves. Re-render to apply.",
+    "size": "Size",
+    "sizePlaceholder": "project default",
+    "sizeHint": "px",
+    "sizeHintRef": "px at a {{height}} px tall page (scales with the page)",
+    "clearSize": "Clear size",
+    "effect": "Style"
   },
   "typesetting": {
     "title": "Project defaults",

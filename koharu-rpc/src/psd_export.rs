@@ -44,7 +44,7 @@ pub fn psd_bytes_for_page(
         .ok_or_else(|| anyhow::anyhow!("page {page_id} not found"))?;
     let project_default_font = scene.project.style.default_font.clone();
     let characters = session.characters();
-    let project_color = session.typesetting().color;
+    let typesetting = session.typesetting();
     let ResolvedPage {
         doc,
         source,
@@ -59,7 +59,7 @@ pub fn psd_bytes_for_page(
         default_font_override,
         project_default_font,
         &characters,
-        project_color,
+        &typesetting,
         page,
     )
     .with_context(|| format!("page {page_id}"))?;
@@ -84,7 +84,7 @@ fn resolve_page_blobs(
     default_font_override: Option<String>,
     project_default_font: Option<String>,
     characters: &koharu_core::CharacterBook,
-    project_color: Option<[u8; 4]>,
+    typesetting: &koharu_core::TypesettingDefaults,
     page: &koharu_core::Page,
 ) -> Result<ResolvedPage> {
     let mut source: Option<DynamicImage> = None;
@@ -162,8 +162,16 @@ fn resolve_page_blobs(
                     text.style.as_ref().unwrap_or(&TextStyle::default()),
                     text.font_prediction.as_ref(),
                     speaker.and_then(|c| c.color),
-                    project_color,
+                    typesetting.color,
                 ));
+                apply_speaker_typesetting(
+                    &mut block,
+                    speaker,
+                    typesetting.font_size_for_page(page.height),
+                    speaker.and_then(|c| {
+                        typesetting.scale_size_for_page(c.font_size_px?, page.height)
+                    }),
+                );
                 text_blocks.push(block);
             }
         }
@@ -214,6 +222,43 @@ pub fn png_bytes_for_page(
         .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
         .map_err(anyhow::Error::new)?;
     Ok(Some(buf))
+}
+
+/// Fill the editable text's size / bold / italic / alignment from the
+/// speaker (then the project default size) where the block sets none,
+/// mirroring the renderer.
+fn apply_speaker_typesetting(
+    block: &mut PsdTextBlock,
+    speaker: Option<&koharu_core::Character>,
+    project_size: Option<f32>,
+    speaker_size: Option<f32>,
+) {
+    let size = speaker_size.or(project_size);
+    let effect = speaker.and_then(|c| c.effect());
+    let align = speaker.and_then(|c| c.text_align);
+    if size.is_none() && effect.is_none() && align.is_none() {
+        return;
+    }
+    let color = block.text_color.unwrap_or([0, 0, 0, 255]);
+    let style = block.style.get_or_insert_with(|| PsdTextStyle {
+        font_families: Vec::new(),
+        font_size: None,
+        color,
+        effect: None,
+        text_align: None,
+    });
+    if style.font_size.is_none() {
+        style.font_size = size;
+    }
+    if style.effect.is_none() {
+        style.effect = effect.map(|e| PsdShaderEffect {
+            italic: e.italic,
+            bold: e.bold,
+        });
+    }
+    if style.text_align.is_none() {
+        style.text_align = align.map(convert_align);
+    }
 }
 
 fn resolve_export_font_style(

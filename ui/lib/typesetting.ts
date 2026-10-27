@@ -19,6 +19,8 @@ export type TypesettingDefaults = {
   shrinkToFit?: boolean
   /** Outline for blocks without their own. */
   stroke?: StrokeDefaults | null
+  /** Thai line breaking with ICU's LSTM model instead of its dictionary. */
+  thaiLstmLineBreaking?: boolean
 }
 
 /** Default outline; unset colour / width stay automatic. */

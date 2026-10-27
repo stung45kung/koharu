@@ -32,6 +32,10 @@ pub struct TypesettingDefaults {
     /// Outline for blocks without an outline of their own.
     #[serde(default)]
     pub stroke: Option<StrokeDefaults>,
+    /// Find Thai words for line breaking with ICU's LSTM model instead of
+    /// its word dictionary (the default).
+    #[serde(default)]
+    pub thai_lstm_line_breaking: bool,
 }
 
 /// A default text outline. Unset fields fall back to automatic values

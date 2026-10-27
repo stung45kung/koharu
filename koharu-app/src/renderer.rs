@@ -82,6 +82,10 @@ pub struct PageRenderOptions {
     pub default_font_size_shrinks: bool,
     /// Project text colour for blocks without their own style.
     pub default_color: Option<[u8; 4]>,
+    /// How Thai words are found for line breaking.
+    pub thai_word_breaking: koharu_renderer::segment::ThaiWordBreaking,
+    /// Words never split across lines (glossary renderings, character names).
+    pub protected_words: Vec<String>,
 }
 
 /// Per-block sprite output. `transform` becomes `TextData.sprite_transform`
@@ -217,6 +221,8 @@ impl Renderer {
                 opts.default_font_size,
                 opts.default_font_size_shrinks,
                 opts.default_color,
+                opts.thai_word_breaking,
+                &opts.protected_words,
             ) {
                 Ok(Some(out)) => rendered_blocks.push(out),
                 Ok(None) => {}
@@ -254,6 +260,8 @@ impl Renderer {
         default_font_size: Option<f32>,
         default_font_size_shrinks: bool,
         default_color: Option<[u8; 4]>,
+        thai_word_breaking: koharu_renderer::segment::ThaiWordBreaking,
+        protected_words: &[String],
     ) -> Result<Option<RenderedBlock>> {
         let translation = block.translation.trim();
         if translation.is_empty() {
@@ -305,7 +313,9 @@ impl Renderer {
         let mut layout_builder = TextLayout::new(&font, None)
             .with_fallback_fonts(&self.symbol_fallbacks)
             .with_writing_mode(writing_mode)
-            .with_alignment(align);
+            .with_alignment(align)
+            .with_thai_word_breaking(thai_word_breaking)
+            .with_protected_words(protected_words);
         if let Some(target_language) = target_language {
             layout_builder = layout_builder.with_hyphenation_language_tag(target_language);
         }

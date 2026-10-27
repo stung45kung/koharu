@@ -58,6 +58,7 @@ mod tests {
                 color: Some([0, 0, 0, 255]),
                 width_px: Some(3.0),
             }),
+            thai_lstm_line_breaking: true,
         };
         save(&dir, &d).unwrap();
         assert_eq!(load(&dir), d);

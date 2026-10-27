@@ -108,6 +108,12 @@ impl Engine for Model {
             default_font_size: ctx.typesetting.font_size_for_page(page_height),
             default_font_size_shrinks: ctx.typesetting.shrink_to_fit,
             default_color: ctx.typesetting.color,
+            thai_word_breaking: if ctx.typesetting.thai_lstm_line_breaking {
+                koharu_renderer::segment::ThaiWordBreaking::Lstm
+            } else {
+                koharu_renderer::segment::ThaiWordBreaking::Dictionary
+            },
+            protected_words: protected_words(ctx),
         };
 
         // `render_page` is synchronous and CPU-bound. It runs inline on the
@@ -183,6 +189,26 @@ inventory::submit! {
             Ok(Box::new(Model) as Box<dyn Engine>)
         }),
     }
+}
+
+/// Glossary renderings and character names: never split across lines
+/// (dictionary word breaking would cut unknown names into pieces).
+fn protected_words(ctx: &EngineCtx<'_>) -> Vec<String> {
+    let mut words: Vec<String> = ctx
+        .session
+        .glossary()
+        .entries
+        .into_iter()
+        .map(|e| e.target.trim().to_string())
+        .collect();
+    for c in &ctx.characters.characters {
+        words.extend(c.name.split('/').map(|n| n.trim().to_string()));
+    }
+    words.retain(|w| w.chars().count() >= 2 && w.chars().count() <= 40);
+    // Longest first, so a longer name wins over a shorter one inside it.
+    words.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+    words.dedup();
+    words
 }
 
 /// The speaker's outline over the project's, field by field, with the width

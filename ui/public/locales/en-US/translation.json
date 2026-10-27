@@ -543,7 +543,9 @@
     "hintNoSize": "The selected block has no size of its own (auto), so only its font and color will be saved. Set a size above first to save it too.",
     "color": "Color",
     "notSetColor": "not set (detected from source)",
-    "shrinkToFit": "Shrink long text to fit its box (off = always this size)"
+    "shrinkToFit": "Shrink long text to fit its box (off = always this size)",
+    "thaiLstm": "Thai line breaks: AI model (off = dictionary)",
+    "thaiLstmHint": "Off (default): ICU's Thai word dictionary — ordinary words are never split; names in the glossary / character list are kept whole. On: ICU's LSTM model — guesses unknown words but splits ordinary ones less predictably. Re-render to apply."
   },
   "glossary": {
     "button": "Glossary",

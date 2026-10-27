@@ -109,10 +109,19 @@ export function ProjectTypesettingDefaults({
     }
   }
 
+  const setThaiLstm = async (thaiLstmLineBreaking: boolean) => {
+    try {
+      await save.mutateAsync({ ...typesetting, thaiLstmLineBreaking })
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
   const clear = async () => {
     try {
       await setProjectFont(null)
-      await save.mutateAsync({})
+      // Keep the line-breaking choice: it isn't one of the cleared defaults.
+      await save.mutateAsync({ thaiLstmLineBreaking: typesetting.thaiLstmLineBreaking })
     } catch (err) {
       useEditorUiStore.getState().showError(String(err))
     }
@@ -192,6 +201,19 @@ export function ProjectTypesettingDefaults({
           <span>{t('typesetting.shrinkToFit')}</span>
         </label>
       ) : null}
+      <label
+        className='flex items-center gap-2 text-xs'
+        title={t('typesetting.thaiLstmHint')}
+      >
+        <Switch
+          size='sm'
+          data-testid='project-typesetting-thai-lstm'
+          checked={typesetting.thaiLstmLineBreaking ?? false}
+          disabled={save.isPending}
+          onCheckedChange={(checked) => void setThaiLstm(checked)}
+        />
+        <span>{t('typesetting.thaiLstm')}</span>
+      </label>
       <div className='flex flex-wrap gap-1'>
         <Button
           variant='outline'

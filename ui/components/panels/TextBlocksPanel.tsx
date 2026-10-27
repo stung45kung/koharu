@@ -4,7 +4,7 @@ import {
   BookOpenIcon,
   CheckCheckIcon,
   LibraryIcon,
-  MessageSquarePenIcon,
+  SparklesIcon,
   Languages,
   LoaderCircleIcon,
   Trash2Icon,
@@ -658,7 +658,7 @@ function ReviseButton({
               disabled={disabled}
               className='size-5'
             >
-              <MessageSquarePenIcon className='size-3' />
+              <SparklesIcon className='size-3' />
             </Button>
           </PopoverTrigger>
         </TooltipTrigger>

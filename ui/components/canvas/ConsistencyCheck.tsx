@@ -1,6 +1,6 @@
 'use client'
 
-import { ListChecksIcon, XIcon } from 'lucide-react'
+import { CheckCheckIcon, XIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -67,7 +67,7 @@ export function ConsistencyCheck() {
           disabled={!scene}
           className={cn(open && 'bg-accent')}
         >
-          <ListChecksIcon className='size-4' />
+          <CheckCheckIcon className='size-4' />
           {t('check.button')}
         </Button>
       </PopoverTrigger>

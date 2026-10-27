@@ -277,7 +277,8 @@ impl Renderer {
             block.style.as_ref(),
             &style,
             block.font_prediction.as_ref(),
-            block.speaker_color.or(default_color),
+            block.speaker_color,
+            default_color,
         );
 
         let writing_mode = writing_mode_for_block(&layout_source);
@@ -1048,29 +1049,42 @@ fn resolve_stroke_style(
     })
 }
 
-/// Block style colour → project default colour → detected source colour →
-/// black.
-fn resolve_text_color(
+/// Block style colour → speaker (character) colour → project default colour →
+/// detected source colour → black.
+///
+/// Editing any style field of a block (size, alignment, font…) makes the UI
+/// store a whole `TextStyle`, and `TextStyle::color` can't be left empty, so
+/// the block gets the colour it was showing at that moment stamped in. Such
+/// a stamped colour — the project default, the detected colour or plain
+/// black — is not a real choice and must not hide the speaker's colour.
+pub fn resolve_text_color(
     explicit_style: Option<&TextStyle>,
     derived_style: &TextStyle,
     font_prediction: Option<&FontPrediction>,
+    speaker_color: Option<[u8; 4]>,
     project_default: Option<[u8; 4]>,
 ) -> [u8; 4] {
-    if explicit_style.is_some() {
-        return derived_style.color;
-    }
-    if let Some(color) = project_default {
-        return color;
-    }
-    if let Some(pred) = font_prediction {
-        return [
+    let predicted = font_prediction.map(|pred| {
+        [
             pred.text_color[0],
             pred.text_color[1],
             pred.text_color[2],
             255,
-        ];
+        ]
+    });
+    if explicit_style.is_some() {
+        let color = derived_style.color;
+        let stamped =
+            Some(color) == project_default || Some(color) == predicted || color == [0, 0, 0, 255];
+        return match speaker_color {
+            Some(speaker) if stamped => speaker,
+            _ => color,
+        };
     }
-    [0, 0, 0, 255]
+    speaker_color
+        .or(project_default)
+        .or(predicted)
+        .unwrap_or([0, 0, 0, 255])
 }
 
 // ---------------------------------------------------------------------------
@@ -1422,7 +1436,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            resolve_text_color(None, &derived, Some(&prediction), None),
+            resolve_text_color(None, &derived, Some(&prediction), None, None),
             [12, 34, 56, 255]
         );
     }
@@ -1443,7 +1457,7 @@ mod tests {
         };
         let white = Some([255, 255, 255, 255]);
         assert_eq!(
-            resolve_text_color(None, &derived, Some(&prediction), white),
+            resolve_text_color(None, &derived, Some(&prediction), None, white),
             [255, 255, 255, 255]
         );
         let explicit = TextStyle {
@@ -1451,8 +1465,53 @@ mod tests {
             ..derived.clone()
         };
         assert_eq!(
-            resolve_text_color(Some(&explicit), &explicit, Some(&prediction), white),
+            resolve_text_color(Some(&explicit), &explicit, Some(&prediction), None, white),
             [200, 100, 50, 255]
+        );
+    }
+
+    #[test]
+    fn speaker_color_beats_a_stamped_block_colour_but_not_a_chosen_one() {
+        let prediction = FontPrediction {
+            text_color: [12, 34, 56],
+            ..Default::default()
+        };
+        let project = Some([255, 255, 255, 255]);
+        let pink = Some([247, 12, 132, 255]);
+        let style = |color| TextStyle {
+            font_families: Vec::new(),
+            font_size: Some(30.0),
+            color,
+            effect: None,
+            stroke: None,
+            text_align: None,
+        };
+        // No block style: speaker beats project default.
+        let plain = style([0, 0, 0, 255]);
+        assert_eq!(
+            resolve_text_color(None, &plain, Some(&prediction), pink, project),
+            pink.unwrap()
+        );
+        // Block style whose colour is just the stamped project / detected /
+        // black colour: speaker still wins.
+        for stamped in [[255, 255, 255, 255], [12, 34, 56, 255], [0, 0, 0, 255]] {
+            let s = style(stamped);
+            assert_eq!(
+                resolve_text_color(Some(&s), &s, Some(&prediction), pink, project),
+                pink.unwrap()
+            );
+        }
+        // A colour the user picked for this block wins over the speaker.
+        let chosen = style([40, 200, 90, 255]);
+        assert_eq!(
+            resolve_text_color(Some(&chosen), &chosen, Some(&prediction), pink, project),
+            [40, 200, 90, 255]
+        );
+        // Without a speaker colour a stamped colour is kept as before.
+        let s = style([255, 255, 255, 255]);
+        assert_eq!(
+            resolve_text_color(Some(&s), &s, Some(&prediction), None, project),
+            [255, 255, 255, 255]
         );
     }
 
@@ -1471,7 +1530,7 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(
-            resolve_text_color(Some(&explicit), &explicit, Some(&prediction), None),
+            resolve_text_color(Some(&explicit), &explicit, Some(&prediction), None, None),
             [200, 100, 50, 255]
         );
     }

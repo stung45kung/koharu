@@ -53,6 +53,7 @@ import {
 } from '@/lib/font-utils'
 import { applyOp, invalidateScene, queueAutoRender } from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
+import { speakerOf, useCharacters } from '@/lib/characters'
 import { useTypesetting } from '@/lib/typesetting'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
@@ -133,11 +134,36 @@ const effectiveColorOf = (
 
 const hasExplicitColor = (node: TextNodeEntry) => Array.isArray(node.data.style?.color)
 
+const sameColor = (a?: number[] | null, b?: number[] | null) =>
+  !!a && !!b && a.length >= 3 && b.length >= 3 && a.slice(0, 4).every((v, i) => v === (b[i] ?? 255))
+
+/**
+ * Colour the renderer actually draws, speaker colour included. A block
+ * colour equal to the project default, the detected colour or black was
+ * only stamped in by a style edit, so the speaker's colour wins over it
+ * (mirrors `resolve_text_color` in `koharu-app/src/renderer.rs`).
+ */
+const renderedColorOf = (
+  style: TextStyle | null | undefined,
+  prediction: FontPrediction | null | undefined,
+  projectColor: number[] | null | undefined,
+  speakerColor: number[] | null | undefined,
+): number[] => {
+  if (!speakerColor) return effectiveColorOf(style, prediction, projectColor)
+  if (!style?.color) return speakerColor
+  const stamped =
+    sameColor(style.color, projectColor) ||
+    sameColor(style.color, predictionColor(prediction)) ||
+    sameColor(style.color, DEFAULT_COLOR)
+  return stamped ? speakerColor : style.color
+}
+
 export function RenderControlsPanel() {
   const { t } = useTranslation()
   const page = useCurrentPage()
   const textNodes = useTextNodes()
   const selectedNode = useSelectedTextNode()
+  const characterBook = useCharacters()
   const selectedNodes = useSelectedTextNodes()
   const { data: availableFonts = [] } = useListFonts()
   useGetGoogleFontsCatalog() // prefetch catalog so picker can decorate Google entries
@@ -271,7 +297,15 @@ export function RenderControlsPanel() {
     colorSource?.data.fontPrediction,
     projectColor,
   )
-  const currentColorHex = colorToHex(currentColor)
+  const speakerColor = colorSource ? speakerOf(characterBook, colorSource.id)?.color : null
+  const currentColorHex = colorToHex(
+    renderedColorOf(
+      colorSource?.data.style,
+      colorSource?.data.fontPrediction,
+      projectColor,
+      speakerColor,
+    ),
+  )
   const currentStroke = normalizeStroke(selectedStyle?.stroke)
   const currentStrokeColorHex = colorToHex(currentStroke.color ?? DEFAULT_STROKE_COLOR)
   const currentStrokeWidth = currentStroke.widthPx ?? DEFAULT_STROKE_WIDTH

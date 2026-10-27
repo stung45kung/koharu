@@ -43,6 +43,8 @@ pub fn psd_bytes_for_page(
         .get(&page_id)
         .ok_or_else(|| anyhow::anyhow!("page {page_id} not found"))?;
     let project_default_font = scene.project.style.default_font.clone();
+    let characters = session.characters();
+    let project_color = session.typesetting().color;
     let ResolvedPage {
         doc,
         source,
@@ -56,6 +58,8 @@ pub fn psd_bytes_for_page(
         renderer,
         default_font_override,
         project_default_font,
+        &characters,
+        project_color,
         page,
     )
     .with_context(|| format!("page {page_id}"))?;
@@ -79,6 +83,8 @@ fn resolve_page_blobs(
     renderer: &koharu_app::renderer::Renderer,
     default_font_override: Option<String>,
     project_default_font: Option<String>,
+    characters: &koharu_core::CharacterBook,
+    project_color: Option<[u8; 4]>,
     page: &koharu_core::Page,
 ) -> Result<ResolvedPage> {
     let mut source: Option<DynamicImage> = None;
@@ -124,8 +130,10 @@ fn resolve_page_blobs(
                     block_images.insert(blob_ref_to_psd(sprite), decoded);
                 }
 
+                let speaker = characters.speaker_of(*node_id);
                 let style = resolve_export_font_style(
                     text,
+                    speaker.and_then(|c| c.font.as_deref()),
                     &project_default_font,
                     default_font_override.as_deref(),
                 );
@@ -146,12 +154,17 @@ fn resolve_page_blobs(
                     idx
                 });
 
-                text_blocks.push(text_to_psd(
-                    node_id,
-                    &node.transform,
-                    text,
-                    Some(font_index),
+                let mut block = text_to_psd(node_id, &node.transform, text, Some(font_index));
+                // Same colour the rendered sprite got, so the editable text
+                // in Photoshop matches it (speaker / project colours too).
+                block.text_color = Some(koharu_app::renderer::resolve_text_color(
+                    text.style.as_ref(),
+                    text.style.as_ref().unwrap_or(&TextStyle::default()),
+                    text.font_prediction.as_ref(),
+                    speaker.and_then(|c| c.color),
+                    project_color,
                 ));
+                text_blocks.push(block);
             }
         }
     }
@@ -205,11 +218,14 @@ pub fn png_bytes_for_page(
 
 fn resolve_export_font_style(
     text: &TextData,
+    speaker_font: Option<&str>,
     project_default: &Option<String>,
     ui_override: Option<&str>,
 ) -> TextStyle {
     let mut style = text.style.clone().unwrap_or_default();
-    let default_font = ui_override
+    let default_font = speaker_font
+        .filter(|f| !f.trim().is_empty())
+        .or(ui_override)
         .map(|s| s.to_string())
         .or_else(|| project_default.clone());
 

@@ -714,6 +714,9 @@ fn infer_font_size(block: &PsdTextBlock) -> f64 {
 }
 
 fn infer_color(block: &PsdTextBlock) -> [u8; 4] {
+    if let Some(color) = block.text_color {
+        return color;
+    }
     if let Some(style) = block.style.as_ref() {
         return style.color;
     }

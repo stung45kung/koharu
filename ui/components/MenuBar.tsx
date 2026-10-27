@@ -168,6 +168,24 @@ export function MenuBar() {
       testId: 'menu-file-export-psd',
     },
     {
+      label: t('menu.exportAllPsd'),
+      onSelect: () => void exportCurrentProjectAs('psd'),
+      disabled: !hasScene,
+      testId: 'menu-file-export-all-psd',
+    },
+    {
+      label: t('menu.exportSelectedPsd', { count: selectedPagesInOrder.length }),
+      onSelect: () => void exportCurrentProjectAs('psd', selectedPagesInOrder),
+      disabled: selectedPagesInOrder.length < 2,
+      testId: 'menu-file-export-selected-psd',
+    },
+    {
+      label: t('menu.exportSelectedRendered', { count: selectedPagesInOrder.length }),
+      onSelect: () => void exportCurrentProjectAs('rendered', selectedPagesInOrder),
+      disabled: selectedPagesInOrder.length < 2,
+      testId: 'menu-file-export-selected-rendered',
+    },
+    {
       label: t('menu.exportAllInpainted'),
       onSelect: () => void exportCurrentProjectAs('inpainted'),
       disabled: !hasScene,

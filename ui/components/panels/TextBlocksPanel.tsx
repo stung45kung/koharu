@@ -51,7 +51,12 @@ import {
   type Character,
   type CharacterBook,
 } from '@/lib/characters'
-import { applyOp, invalidateScene, queueAutoRender, reorderPageTextNodes } from '@/lib/io/scene'
+import {
+  applyOp,
+  deleteTextNodes,
+  queueAutoRender,
+  reorderPageTextNodes,
+} from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { useJobsStore } from '@/lib/stores/jobsStore'
@@ -164,18 +169,6 @@ export function TextBlocksPanel() {
     } catch (err) {
       useEditorUiStore.getState().showError(String(err))
     }
-  }
-
-  const removeNodes = async (nodeIds: string[]) => {
-    const batch = nodeIds.flatMap((nodeId) => {
-      const node = page.nodes[nodeId]
-      if (!node) return []
-      const idx = Object.keys(page.nodes).indexOf(nodeId)
-      return [ops.removeNode(page.id, nodeId, node, idx < 0 ? 0 : idx)]
-    })
-    await applyOp(ops.batch('removeNodes', batch))
-    clearSelection()
-    queueAutoRender(page.id)
   }
 
   const generate = async (nodeId: string, instruction?: string) => {
@@ -381,7 +374,7 @@ export function TextBlocksPanel() {
               variant='ghost'
               size='icon-xs'
               className='size-5 text-rose-600 hover:text-rose-600'
-              onClick={() => removeNodes([...selectedIds])}
+              onClick={() => void deleteTextNodes(page.id, selectedIds)}
             >
               <Trash2Icon className='size-4' />
             </Button>

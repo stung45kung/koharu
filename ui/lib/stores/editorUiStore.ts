@@ -3,7 +3,7 @@
 import { create } from 'zustand'
 
 import type { LlmTarget } from '@/lib/api/schemas'
-import type { RenderEffect, RenderStroke, ToolMode } from '@/lib/types'
+import type { RenderEffect, ToolMode } from '@/lib/types'
 
 /**
  * Editor UI state (canvas scale, tool mode, layer-visibility toggles, local
@@ -50,9 +50,7 @@ type EditorUiState = {
 
   // render style defaults (per-session)
   renderEffect: RenderEffect
-  renderStroke?: RenderStroke
   setRenderEffect: (effect: RenderEffect) => void
-  setRenderStroke: (stroke?: RenderStroke) => void
 
   // llm ui
   selectedTarget?: LlmTarget
@@ -84,7 +82,6 @@ const initialState = {
   showTextBlocksOverlay: false,
   mode: 'select' as ToolMode,
   renderEffect: { italic: false, bold: false } as RenderEffect,
-  renderStroke: undefined as RenderStroke | undefined,
   selectedTarget: undefined as LlmTarget | undefined,
   selectedLanguage: undefined as string | undefined,
   error: undefined as { id: number; message: string } | undefined,
@@ -126,7 +123,6 @@ export const useEditorUiStore = create<EditorUiState>((set) => ({
   },
 
   setRenderEffect: (effect) => set({ renderEffect: effect }),
-  setRenderStroke: (stroke) => set({ renderStroke: stroke }),
 
   setSelectedTarget: (selectedTarget) => set({ selectedTarget }),
   setSelectedLanguage: (selectedLanguage) => set({ selectedLanguage }),

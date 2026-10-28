@@ -2,22 +2,20 @@
 
 import { useEffect, useMemo } from 'react'
 
-import { applyOp, deleteSelectedTextNodesOnCurrentPage, queueAutoRender, redoOp, selectAllTextNodesOnCurrentPage, undoOp } from '@/lib/io/scene'
+import { useHotkeys } from 'react-hotkeys-hook'
+
+import { deleteTextNodes, redoOp, selectAllTextNodesOnCurrentPage, undoOp } from '@/lib/io/scene'
 import { getPlatform, formatShortcut, isModifierKey } from '@/lib/shortcutUtils'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
-import { useCurrentPage } from './useCurrentPage'
 import { useSelectionStore } from '@/lib/stores/selectionStore'
-import { ops } from '@/lib/ops'
-import { useHotkeys } from 'react-hotkeys-hook'
 
 export function useKeyboardShortcuts() {
   const setMode = useEditorUiStore((state) => state.setMode)
   const setBrushConfig = usePreferencesStore((state) => state.setBrushConfig)
   const shortcuts = usePreferencesStore((state) => state.shortcuts)
   const isMac = useMemo(() => getPlatform() === 'mac', [])
-  const page = useCurrentPage()
-  const clearSelection = useSelectionStore((s) => s.clear)
+  const pageId = useSelectionStore((s) => s.pageId)
   const selectedIds = useSelectionStore((s) => s.nodeIds)
 
   // Optimized tool mapping - built once and updated only when shortcuts change
@@ -102,28 +100,17 @@ export function useKeyboardShortcuts() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMac, setMode, TOOL_MAP, shortcuts])
 
-  const removeNodes = async (nodeIds: string[]) => {
-    if (!page) {
-      return;
-    }
-
-    const batch = nodeIds.flatMap((nodeId) => {
-      const node = page.nodes[nodeId]
-      if (!node) return []
-      const idx = Object.keys(page.nodes).indexOf(nodeId)
-      return [ops.removeNode(page.id, nodeId, node, idx < 0 ? 0 : idx)]
-    })
-    await applyOp(ops.batch("removeNodes", batch))
-    clearSelection()
-    queueAutoRender(page.id)
-  }
-
+  // Delete removes the selected text blocks (form fields keep their own
+  // Delete: react-hotkeys-hook ignores inputs and textareas).
   useHotkeys(
     'delete',
-    () => {
-      if (selectedIds.size !== 0) void removeNodes([...selectedIds])
+    (event) => {
+      // Delete in the page list deletes pages, not text blocks.
+      const target = event.target as Element | null
+      if (target?.closest?.('[data-testid="navigator-panel"]')) return
+      if (pageId && selectedIds.size > 0) void deleteTextNodes(pageId, selectedIds)
     },
-    { enabled: selectedIds.size !== 0 },
-    [selectedIds],
+    { enabled: !!pageId && selectedIds.size > 0 },
+    [pageId, selectedIds],
   )
 }

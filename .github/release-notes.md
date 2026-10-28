@@ -23,7 +23,8 @@ show a SmartScreen warning because the installer is not code-signed: click
 - Check panel (glossary misses, inconsistent lines, untranslated blocks).
 - Import pages from PDF / ZIP / CBZ / RAR / CBR (pages with a colour
   profile such as Apple RGB are converted to sRGB, so renders keep the
-  original colours); export PSD for all or selected pages (rotation kept);
+  original colours; pages of older projects too, after re-running inpaint
+  and render); export PSD for all or selected pages (rotation kept);
   delete several blocks at once.
 - Local LLMs (LM Studio etc.): replies are length-limited and runaway
   repeated sounds are cut, so a model looping on moans no longer runs on.

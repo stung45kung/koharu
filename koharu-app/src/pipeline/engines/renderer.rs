@@ -114,6 +114,7 @@ impl Engine for Model {
                 koharu_renderer::segment::ThaiWordBreaking::Dictionary
             },
             protected_words: protected_words(&ctx),
+            expand_into_bubble: ctx.typesetting.expand_into_bubble,
         };
 
         // `render_page` is synchronous and CPU-bound. It runs inline on the
@@ -154,7 +155,7 @@ impl Engine for Model {
                         style: preserve_existing_style(existing_style),
                         ..Default::default()
                     })),
-                    transform: None,
+                    transform: block_out.block_transform.map(normalize_transform),
                     visible: None,
                 },
                 prev: NodePatch::default(),

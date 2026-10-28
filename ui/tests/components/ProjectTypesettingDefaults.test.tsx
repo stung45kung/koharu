@@ -84,6 +84,33 @@ describe('ProjectTypesettingDefaults', () => {
     renderWithQuery(<ProjectTypesettingDefaults hasSelection={false} pageHeight={1000} />)
     expect(await screen.findByTestId('project-typesetting-save')).toBeDisabled()
   })
+
+  it('toggles the bubble layout and keeps other settings when saving', async () => {
+    typesetting = { thaiLstmLineBreaking: true, stroke: { enabled: true, widthPx: 3 } }
+    renderWithQuery(
+      <ProjectTypesettingDefaults selectedFontSize={30} pageHeight={1500} hasSelection />,
+    )
+
+    const bubble = await screen.findByTestId('project-typesetting-expand-bubble')
+    await waitFor(() =>
+      expect(screen.getByTestId('project-typesetting-thai-lstm')).toHaveAttribute(
+        'aria-checked',
+        'true',
+      ),
+    )
+    await userEvent.click(bubble)
+    await waitFor(() => expect(puts).toHaveLength(1))
+    expect(puts[0]).toMatchObject({ thaiLstmLineBreaking: true, expandIntoBubble: true })
+
+    await userEvent.click(screen.getByTestId('project-typesetting-save'))
+    await waitFor(() => expect(puts).toHaveLength(2))
+    expect(puts[1]).toMatchObject({
+      fontSizePx: 30,
+      thaiLstmLineBreaking: true,
+      expandIntoBubble: true,
+      stroke: { enabled: true, widthPx: 3 },
+    })
+  })
 })
 
 describe('defaultSizeForPage', () => {

@@ -21,6 +21,8 @@ export type TypesettingDefaults = {
   stroke?: StrokeDefaults | null
   /** Thai line breaking with ICU's LSTM model instead of its dictionary. */
   thaiLstmLineBreaking?: boolean
+  /** true: a block alone in a speech bubble uses the bubble's free area. false: text stays in the block. */
+  expandIntoBubble?: boolean
 }
 
 /** Default outline; unset colour / width stay automatic. */

@@ -59,6 +59,7 @@ mod tests {
                 width_px: Some(3.0),
             }),
             thai_lstm_line_breaking: true,
+            expand_into_bubble: true,
         };
         save(&dir, &d).unwrap();
         assert_eq!(load(&dir), d);

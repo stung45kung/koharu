@@ -92,6 +92,7 @@ export function ProjectTypesettingDefaults({
               referencePageHeight: typesetting.referencePageHeight ?? null,
             }
       await save.mutateAsync({
+        ...typesetting,
         ...sizePart,
         color: selectedColor ?? typesetting.color ?? null,
         shrinkToFit: typesetting.shrinkToFit ?? false,
@@ -117,11 +118,22 @@ export function ProjectTypesettingDefaults({
     }
   }
 
+  const setExpandIntoBubble = async (expandIntoBubble: boolean) => {
+    try {
+      await save.mutateAsync({ ...typesetting, expandIntoBubble })
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
   const clear = async () => {
     try {
       await setProjectFont(null)
-      // Keep the line-breaking choice: it isn't one of the cleared defaults.
-      await save.mutateAsync({ thaiLstmLineBreaking: typesetting.thaiLstmLineBreaking })
+      // Keep the layout switches: they aren't among the cleared defaults.
+      await save.mutateAsync({
+        thaiLstmLineBreaking: typesetting.thaiLstmLineBreaking,
+        expandIntoBubble: typesetting.expandIntoBubble,
+      })
     } catch (err) {
       useEditorUiStore.getState().showError(String(err))
     }
@@ -213,6 +225,19 @@ export function ProjectTypesettingDefaults({
           onCheckedChange={(checked) => void setThaiLstm(checked)}
         />
         <span>{t('typesetting.thaiLstm')}</span>
+      </label>
+      <label
+        className='flex items-center gap-2 text-xs'
+        title={t('typesetting.expandIntoBubbleHint')}
+      >
+        <Switch
+          size='sm'
+          data-testid='project-typesetting-expand-bubble'
+          checked={typesetting.expandIntoBubble ?? false}
+          disabled={save.isPending}
+          onCheckedChange={(checked) => void setExpandIntoBubble(checked)}
+        />
+        <span>{t('typesetting.expandIntoBubble')}</span>
       </label>
       <div className='flex flex-wrap gap-1'>
         <Button

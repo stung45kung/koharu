@@ -64,7 +64,7 @@ fn convert_to_srgb(img: &DynamicImage, icc: &[u8]) -> Option<DynamicImage> {
             Transform::new_to(&input, &srgb, DataType::Gray8, DataType::RGB8, intent)?
                 .convert(src.as_raw(), &mut out);
             // A grey profile maps to neutral sRGB: keep the page grey.
-            let grey: Vec<u8> = out.chunks_exact(3).map(|p| p[1]).collect();
+            let grey: Vec<u8> = out.as_chunks::<3>().0.iter().map(|p| p[1]).collect();
             DynamicImage::ImageLuma8(GrayImage::from_raw(w, h, grey)?)
         }
         (b"GRAY", true) if channels < 3 => {
@@ -72,7 +72,12 @@ fn convert_to_srgb(img: &DynamicImage, icc: &[u8]) -> Option<DynamicImage> {
             let mut out = vec![0u8; src.as_raw().len() * 2];
             Transform::new_to(&input, &srgb, DataType::GrayA8, DataType::RGBA8, intent)?
                 .convert(src.as_raw(), &mut out);
-            let grey: Vec<u8> = out.chunks_exact(4).flat_map(|p| [p[1], p[3]]).collect();
+            let grey: Vec<u8> = out
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .flat_map(|p| [p[1], p[3]])
+                .collect();
             DynamicImage::ImageLumaA8(GrayAlphaImage::from_raw(w, h, grey)?)
         }
         _ => return None,

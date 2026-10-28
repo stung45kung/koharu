@@ -594,8 +594,9 @@ function BlockCard({
               />
             </div>
             <div className='flex flex-col gap-0.5'>
-              <span className='text-[10px] text-muted-foreground uppercase'>
-                {t('characters.speakerLabel')}
+              <span className='flex items-baseline justify-between text-[10px] text-muted-foreground'>
+                <span className='uppercase'>{t('characters.speakerLabel')}</span>
+                <span className='opacity-70'>{t('characters.speakerKeysHint')}</span>
               </span>
               <Select
                 value={speaker?.id ?? (other ? OTHER_SPEAKER_ID : UNKNOWN_SPEAKER)}
@@ -612,6 +613,7 @@ function BlockCard({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value={UNKNOWN_SPEAKER} className='text-xs text-muted-foreground'>
+                    <span className='mr-1.5 font-mono text-[10px] opacity-60'>0</span>
                     {t('characters.unknownSpeaker')}
                   </SelectItem>
                   <SelectItem
@@ -619,10 +621,14 @@ function BlockCard({
                     className='text-xs text-muted-foreground'
                     data-testid={`textblock-speaker-other-${index}`}
                   >
+                    <span className='mr-1.5 font-mono text-[10px] opacity-60'>O</span>
                     {t('characters.otherSpeakerOption')}
                   </SelectItem>
-                  {characterBook.characters.map((c) => (
+                  {characterBook.characters.map((c, i) => (
                     <SelectItem key={c.id} value={c.id} className='text-xs'>
+                      <span className='mr-1.5 font-mono text-[10px] opacity-60'>
+                        {i < 9 ? i + 1 : ' '}
+                      </span>
                       {c.name}
                     </SelectItem>
                   ))}

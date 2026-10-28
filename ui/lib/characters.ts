@@ -111,6 +111,24 @@ const storeBook = (book: CharacterBook) => {
   queryClient.removeQueries({ queryKey: charactersQueryKey, type: 'inactive' })
 }
 
+/** The open project's character book from the query cache (empty if none). */
+export function cachedCharacterBook(): CharacterBook {
+  const entries = queryClient.getQueriesData<CharacterBook>({
+    queryKey: charactersQueryKey,
+    type: 'active',
+  })
+  return entries.find(([, data]) => !!data)?.[1] ?? EMPTY_CHARACTER_BOOK
+}
+
+/** Set the speaker of some blocks outside React (keyboard shortcuts). */
+export async function assignSpeakerToNodes(
+  nodeIds: string[],
+  characterId: string | null,
+): Promise<void> {
+  if (nodeIds.length === 0) return
+  storeBook(await putSpeakers(nodeIds, characterId))
+}
+
 export function useSaveCharacters() {
   return useMutation({ mutationFn: putCharacters, onSuccess: storeBook })
 }

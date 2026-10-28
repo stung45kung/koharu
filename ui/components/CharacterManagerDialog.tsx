@@ -203,6 +203,9 @@ export function CharacterManagerDialog({
                       active ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
                     }`}
                   >
+                    <span className='w-3 shrink-0 font-mono text-[10px] opacity-60'>
+                      {index < 9 ? index + 1 : ''}
+                    </span>
                     <span
                       className={`min-w-0 flex-1 truncate ${c.name.trim() ? '' : 'italic opacity-60'}`}
                     >

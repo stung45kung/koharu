@@ -4,6 +4,7 @@ import { useEffect, useMemo } from 'react'
 
 import { useHotkeys } from 'react-hotkeys-hook'
 
+import { assignSpeakerToNodes, cachedCharacterBook, OTHER_SPEAKER_ID } from '@/lib/characters'
 import { deleteTextNodes, redoOp, selectAllTextNodesOnCurrentPage, undoOp } from '@/lib/io/scene'
 import { getPlatform, formatShortcut, isModifierKey } from '@/lib/shortcutUtils'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
@@ -83,6 +84,28 @@ export function useKeyboardShortcuts() {
       if (matchingTool) {
         setMode(matchingTool)
         return
+      }
+
+      // Speaker of the selected blocks: 1-9 = character in list order,
+      // 0 = unknown, O = other (not in the list).
+      const plain = !event.ctrlKey && !event.metaKey && !event.altKey
+      const selected = useSelectionStore.getState().nodeIds
+      if (plain && selected.size > 0) {
+        let speaker: string | null | undefined
+        if (/^[1-9]$/.test(event.key)) {
+          speaker = cachedCharacterBook().characters[Number(event.key) - 1]?.id
+        } else if (event.key === '0') {
+          speaker = null
+        } else if (event.key === 'o' || event.key === 'O') {
+          speaker = OTHER_SPEAKER_ID
+        }
+        if (speaker !== undefined) {
+          event.preventDefault()
+          void assignSpeakerToNodes([...selected], speaker).catch((err) =>
+            useEditorUiStore.getState().showError(String(err)),
+          )
+          return
+        }
       }
 
       // Brush Size

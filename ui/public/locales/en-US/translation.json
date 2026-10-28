@@ -533,7 +533,8 @@
     "speechCuesDraftHint": "Asks the loaded LLM to describe how this character talks, from the blocks you set or confirmed as theirs (at least 2). Save the character first. Edit the result, then Save.",
     "speechCuesDrafted": "Drafted from {{count}} confirmed lines — check it, then Save.",
     "otherSpeaker": "Other",
-    "otherSpeakerOption": "Other (not in list)"
+    "otherSpeakerOption": "Other (not in list)",
+    "speakerKeysHint": "keys: 1–9 character · 0 unknown · O other"
   },
   "typesetting": {
     "title": "Project defaults",

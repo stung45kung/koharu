@@ -294,8 +294,15 @@ export function CharacterManagerDialog({
                     <ColorPicker
                       value={selected.color ? rgbaToHex(selected.color) : '#000000'}
                       onChange={(hex) => update(selected.id, { color: hexToRgba(hex) })}
+                      // While unset the swatch shows black, and picking black
+                      // again is no change for the picker: opening it sets the
+                      // shown colour so black can be chosen.
+                      onOpenChange={(open) => {
+                        if (open && !selected.color) update(selected.id, { color: [0, 0, 0, 255] })
+                      }}
                       triggerTestId='character-color'
-                      className='size-7'
+                      // Faded while unset, so it doesn't read as "black".
+                      className={selected.color ? 'size-7' : 'size-7 opacity-40'}
                     />
                     <span className='text-muted-foreground' data-testid='character-color-value'>
                       {selected.color ? rgbaToHex(selected.color) : t('characters.styleNotSet')}
@@ -367,6 +374,16 @@ export function CharacterManagerDialog({
                     </label>
                     <ColorPicker
                       value={selected.stroke?.color ? rgbaToHex(selected.stroke.color) : '#ffffff'}
+                      onOpenChange={(open) => {
+                        if (open && !selected.stroke?.color)
+                          update(selected.id, {
+                            stroke: {
+                              enabled: selected.stroke?.enabled ?? true,
+                              ...selected.stroke,
+                              color: [255, 255, 255, 255],
+                            },
+                          })
+                      }}
                       onChange={(hex) =>
                         update(selected.id, {
                           stroke: {
@@ -377,7 +394,7 @@ export function CharacterManagerDialog({
                         })
                       }
                       triggerTestId='character-stroke-color'
-                      className='size-7'
+                      className={selected.stroke?.color ? 'size-7' : 'size-7 opacity-40'}
                     />
                     <Input
                       data-testid='character-stroke-width'

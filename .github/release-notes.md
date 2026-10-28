@@ -21,6 +21,10 @@ show a SmartScreen warning because the installer is not code-signed: click
   its block (or spread over its bubble, switchable), rotation handle,
   Reset style.
 - Check panel (glossary misses, inconsistent lines, untranslated blocks).
-- Import pages from PDF / ZIP / CBZ / RAR / CBR; export PSD for all or
-  selected pages (rotation kept); delete several blocks at once.
+- Import pages from PDF / ZIP / CBZ / RAR / CBR (pages with a colour
+  profile such as Apple RGB are converted to sRGB, so renders keep the
+  original colours); export PSD for all or selected pages (rotation kept);
+  delete several blocks at once.
+- Local LLMs (LM Studio etc.): replies are length-limited and runaway
+  repeated sounds are cut, so a model looping on moans no longer runs on.
 - Undo / redo also covers character and speaker edits.

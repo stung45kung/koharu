@@ -1,9 +1,8 @@
 name: Publish
 
+# Fork: upstream-only job, run manually if ever needed.
 on:
-  push:
-    tags:
-      - '*'
+  workflow_dispatch:
 
 permissions:
   contents: read

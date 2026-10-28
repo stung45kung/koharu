@@ -157,8 +157,12 @@ async fn create_pages(
             .into_par_iter()
             .map(
                 |(filename, bytes)| -> ApiResult<(String, u32, u32, BlobRef)> {
-                    let img = image::load_from_memory(&bytes)
-                        .map_err(|e| ApiError::bad_request(format!("decode `{filename}`: {e}")))?;
+                    // Pages tagged with a non-sRGB colour profile are stored
+                    // converted, so renders keep the original's colours.
+                    let (bytes, img) =
+                        koharu_app::page_import::decode_page(bytes).map_err(|e| {
+                            ApiError::bad_request(format!("decode `{filename}`: {e:#}"))
+                        })?;
                     let (w, h) = img.dimensions();
                     let blob = blobs.put_bytes(&bytes).map_err(ApiError::internal)?;
                     Ok((filename, w, h, blob))
@@ -297,9 +301,8 @@ async fn create_pages_from_paths(
             .into_par_iter()
             .map(|page| -> ApiResult<(String, u32, u32, BlobRef)> {
                 let filename = page.name;
-                let bytes = page.bytes;
-                let img = image::load_from_memory(&bytes)
-                    .map_err(|e| ApiError::bad_request(format!("decode `{filename}`: {e}")))?;
+                let (bytes, img) = koharu_app::page_import::decode_page(page.bytes)
+                    .map_err(|e| ApiError::bad_request(format!("decode `{filename}`: {e:#}")))?;
                 let (w, h) = img.dimensions();
                 let blob = blobs.put_bytes(&bytes).map_err(ApiError::internal)?;
                 Ok((filename, w, h, blob))

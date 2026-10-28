@@ -7,9 +7,12 @@ use std::path::Path;
 
 use anyhow::{Context as _, Result, bail};
 
+mod color;
 mod pdf;
 mod rar;
 mod zip;
+
+pub use color::decode_page;
 
 /// One page image before decoding.
 #[derive(Debug)]

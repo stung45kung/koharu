@@ -42,6 +42,7 @@ natord = { workspace = true }
 parking_lot = { workspace = true }
 petgraph = { workspace = true }
 postcard = { workspace = true }
+qcms = { workspace = true }
 rars = { workspace = true }
 reqwest-middleware = { workspace = true }
 secrecy = { workspace = true }

@@ -36,10 +36,10 @@ pub struct TypesettingDefaults {
     /// its word dictionary (the default).
     #[serde(default)]
     pub thai_lstm_line_breaking: bool,
-    /// `false` (default): text is laid out inside each block's own box
-    /// (narrow boxes are widened, and the block grows to match). `true`:
-    /// a block alone in a detected speech bubble lays its text out over
-    /// the bubble's free area instead, which can reach past the block.
+    /// `false` (default): text is laid out inside each block's own box.
+    /// `true`: a block alone in a detected speech bubble lays its text out
+    /// over the bubble's free area, and tall narrow boxes are widened, so
+    /// text can reach past the block.
     #[serde(default)]
     pub expand_into_bubble: bool,
 }

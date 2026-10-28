@@ -17,8 +17,8 @@ show a SmartScreen warning because the installer is not code-signed: click
   projects (export / import as a file).
 - Typesetting: project defaults (font, size scaled to the page, colour,
   outline), Thai dictionary line breaking (names and particles kept
-  together, switchable), floating Thai tone marks fixed, narrow boxes
-  widened, text kept inside its block (switchable), rotation handle,
+  together, switchable), floating Thai tone marks fixed, text kept inside
+  its block (or spread over its bubble, switchable), rotation handle,
   Reset style.
 - Check panel (glossary misses, inconsistent lines, untranslated blocks).
 - Import pages from PDF / ZIP / CBZ / RAR / CBR; export PSD for all or

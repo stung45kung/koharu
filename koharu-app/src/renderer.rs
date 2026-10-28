@@ -86,8 +86,9 @@ pub struct PageRenderOptions {
     pub thai_word_breaking: koharu_renderer::segment::ThaiWordBreaking,
     /// Words never split across lines (glossary renderings, character names).
     pub protected_words: Vec<String>,
-    /// Lay a block's text out over its speech bubble's free area (`true`)
-    /// or inside the block's own box (`false`).
+    /// `true`: a block alone in a speech bubble lays its text out over the
+    /// bubble's free area and tall narrow boxes are widened. `false`: text
+    /// is laid out inside each block's own box, unchanged.
     pub expand_into_bubble: bool,
 }
 
@@ -98,10 +99,6 @@ pub struct RenderedBlock {
     pub sprite: DynamicImage,
     pub rendered_direction: TextDirection,
     pub expanded_transform: Option<Transform>,
-    /// New box for the block itself when its text was laid out in a wider
-    /// box than the block (a widened narrow box), so the block frame keeps
-    /// matching the text.
-    pub block_transform: Option<Transform>,
 }
 
 /// Result of rendering a whole page.
@@ -211,7 +208,9 @@ impl Renderer {
         let bubble_index: Option<BubbleIndex> = bubble_mask.map(|m| BubbleIndex::new(m.to_luma8()));
         let bubble_for_layout = bubble_index.as_ref().filter(|_| opts.expand_into_bubble);
         let mut layout_boxes = resolve_layout_boxes(blocks, bubble_for_layout);
-        widen_narrow_boxes(blocks, &mut layout_boxes, image_width as f32);
+        if opts.expand_into_bubble {
+            widen_narrow_boxes(blocks, &mut layout_boxes, image_width as f32);
+        }
         let bubble_mask = bubble_index.as_ref().map(BubbleIndex::mask);
 
         let mut rendered_blocks = Vec::with_capacity(blocks.len());
@@ -232,12 +231,7 @@ impl Renderer {
                 opts.thai_word_breaking,
                 &opts.protected_words,
             ) {
-                Ok(Some(mut out)) => {
-                    if !opts.expand_into_bubble {
-                        out.block_transform = grown_block_transform(block, layout_box);
-                    }
-                    rendered_blocks.push(out)
-                }
+                Ok(Some(out)) => rendered_blocks.push(out),
                 Ok(None) => {}
                 Err(e) => tracing::warn!(node = %block.node_id, "render failed: {e:#}"),
             }
@@ -393,7 +387,6 @@ impl Renderer {
                 sprite: DynamicImage::ImageRgba8(candidate.image),
                 rendered_direction: rendered_direction_for_writing_mode(writing_mode),
                 expanded_transform: Some(candidate.transform),
-                block_transform: None,
             }));
         }
 
@@ -415,7 +408,6 @@ impl Renderer {
             sprite: DynamicImage::ImageRgba8(candidate.image),
             rendered_direction: rendered_direction_for_writing_mode(writing_mode),
             expanded_transform: Some(candidate.transform),
-            block_transform: None,
         }))
     }
 
@@ -1016,25 +1008,6 @@ fn widen_narrow_boxes(
             height: current.height,
         };
     }
-}
-
-/// The block's box grown to the layout box its text was set in, when that
-/// box differs from the block's own (see [`widen_narrow_boxes`]).
-fn grown_block_transform(
-    block: &RenderBlockInput,
-    resolved: ResolvedLayoutBox,
-) -> Option<Transform> {
-    if resolved.layout_box == resolved.seed_box {
-        return None;
-    }
-    let b = resolved.layout_box;
-    Some(Transform {
-        x: b.x,
-        y: b.y,
-        width: b.width,
-        height: b.height,
-        ..block.transform
-    })
 }
 
 fn seed_layout_box(block: &RenderBlockInput) -> LayoutBox {
@@ -1750,33 +1723,6 @@ mod tests {
         assert!(first.x + first.width <= 90.0 - WIDEN_GAP + 0.001);
         let second = boxes[1].layout_box;
         assert!(second.x >= 50.0 + WIDEN_GAP - 0.001);
-    }
-
-    #[test]
-    fn widened_box_becomes_the_block_box_and_stays_put() {
-        let mut first = block(400.0, 50.0, 40.0, 200.0, "ข้อความ");
-        first.transform.rotation_deg = 5.0;
-        let blocks = vec![first];
-        let mut boxes = resolved(&blocks);
-        widen_narrow_boxes(&blocks, &mut boxes, 1000.0);
-        let grown = grown_block_transform(&blocks[0], boxes[0]).expect("box was widened");
-        assert_eq!(grown.width, 160.0);
-        assert_eq!(grown.height, 200.0);
-        assert_eq!(grown.rotation_deg, 5.0);
-
-        // Rendering again from the grown (rounded) box changes nothing.
-        let mut again = blocks[0].clone();
-        again.transform = Transform {
-            x: grown.x.round(),
-            y: grown.y.round(),
-            width: grown.width.round() - 0.5,
-            height: grown.height.round(),
-            rotation_deg: 5.0,
-        };
-        let again = vec![again];
-        let mut boxes = resolved(&again);
-        widen_narrow_boxes(&again, &mut boxes, 1000.0);
-        assert!(grown_block_transform(&again[0], boxes[0]).is_none());
     }
 
     #[test]

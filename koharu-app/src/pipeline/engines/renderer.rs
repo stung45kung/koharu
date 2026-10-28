@@ -155,7 +155,7 @@ impl Engine for Model {
                         style: preserve_existing_style(existing_style),
                         ..Default::default()
                     })),
-                    transform: block_out.block_transform.map(normalize_transform),
+                    transform: None,
                     visible: None,
                 },
                 prev: NodePatch::default(),

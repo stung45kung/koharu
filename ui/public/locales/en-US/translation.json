@@ -553,7 +553,7 @@
     "thaiLstm": "Thai line breaks: AI model (off = dictionary)",
     "thaiLstmHint": "Off (default): ICU's Thai word dictionary — ordinary words are never split; names in the glossary / character list are kept whole. On: ICU's LSTM model — guesses unknown words but splits ordinary ones less predictably. Re-render to apply.",
     "expandIntoBubble": "Let text spread over its speech bubble (off = keep it in the block)",
-    "expandIntoBubbleHint": "Off (default): text wraps inside each block's own box; tall narrow boxes are widened and the block grows to match. On: a block alone in a detected bubble may lay its text out over the bubble's free area, past the block. Re-render to apply."
+    "expandIntoBubbleHint": "Off (default): text wraps inside each block's own box, which is never changed. On: a block alone in a detected bubble may lay its text out over the bubble's free area, and tall narrow boxes are widened, so text can reach past the block. Re-render to apply."
   },
   "glossary": {
     "button": "Glossary",

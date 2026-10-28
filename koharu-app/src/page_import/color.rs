@@ -4,7 +4,7 @@
 //! colour profile, which viewers then read as sRGB. A page tagged with
 //! another profile (Apple RGB, Adobe RGB, Dot Gain 20%, …) would come out
 //! visibly darker or duller than the original, so such pages are converted
-//! to sRGB once, on import.
+//! to sRGB: on import, and when an older project's page is decoded.
 
 use std::io::Cursor;
 
@@ -15,25 +15,36 @@ use image::{
 };
 use qcms::{DataType, Intent, Profile, Transform};
 
-/// Decode a page image, converting it to sRGB when it carries a profile
-/// that changes its colours. Returns the bytes to store (the input when
-/// nothing was converted, otherwise a PNG) and the decoded image.
-pub fn decode_page(bytes: Vec<u8>) -> Result<(Vec<u8>, DynamicImage)> {
-    let mut decoder = ImageReader::new(Cursor::new(&bytes))
+/// Decode an image, converted to sRGB when it carries a colour profile
+/// that changes its colours. `true` when it was converted.
+pub fn decode_srgb(bytes: &[u8]) -> Result<(DynamicImage, bool)> {
+    let mut decoder = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .context("read image")?
         .into_decoder()
         .context("decode image")?;
     let icc = decoder.icc_profile().ok().flatten();
     let img = DynamicImage::from_decoder(decoder).context("decode image")?;
-    let Some(converted) = icc.as_deref().and_then(|icc| convert_to_srgb(&img, icc)) else {
+    Ok(
+        match icc.as_deref().and_then(|icc| convert_to_srgb(&img, icc)) {
+            Some(converted) => (converted, true),
+            None => (img, false),
+        },
+    )
+}
+
+/// Decode a page image for import, converting it to sRGB when needed.
+/// Returns the bytes to store (the input when nothing was converted,
+/// otherwise a PNG) and the decoded image.
+pub fn decode_page(bytes: Vec<u8>) -> Result<(Vec<u8>, DynamicImage)> {
+    let (img, converted) = decode_srgb(&bytes)?;
+    if !converted {
         return Ok((bytes, img));
-    };
+    }
     let mut png = Cursor::new(Vec::new());
-    converted
-        .write_to(&mut png, ImageFormat::Png)
+    img.write_to(&mut png, ImageFormat::Png)
         .context("encode sRGB page")?;
-    Ok((png.into_inner(), converted))
+    Ok((png.into_inner(), img))
 }
 
 /// The image converted from `icc` to sRGB, or `None` when the profile is

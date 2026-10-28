@@ -12,7 +12,7 @@ mod pdf;
 mod rar;
 mod zip;
 
-pub use color::decode_page;
+pub use color::{decode_page, decode_srgb};
 
 /// One page image before decoding.
 #[derive(Debug)]

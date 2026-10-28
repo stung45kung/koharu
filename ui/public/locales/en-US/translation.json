@@ -601,7 +601,11 @@
     "delete": "Delete",
     "confirmDelete": "Delete {{count}}?",
     "hint": "Same name = same item: saving again updates it, adding again updates the project's copy.",
-    "close": "Close"
+    "close": "Close",
+    "export": "Export…",
+    "import": "Import…",
+    "exported": "Library saved to a file.",
+    "imported": "Imported: {{added}} new, {{updated}} updated."
   },
   "check": {
     "button": "Check",

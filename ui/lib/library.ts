@@ -5,6 +5,8 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { fetchApi } from '@/lib/api/fetch'
 import type { Character, CharacterBook } from '@/lib/characters'
 import type { GlossaryEntry } from '@/lib/glossary'
+import { openJsonFile } from '@/lib/io/openFiles'
+import { saveBlob } from '@/lib/io/saveBlob'
 import { queryClient } from '@/lib/queryClient'
 
 // Hand-written client for `/api/v1/library` (see
@@ -78,4 +80,37 @@ export function useApplyFromLibrary() {
         queryClient.invalidateQueries({ queryKey: ['/api/v1/glossary'] }),
       ]),
   })
+}
+
+/** Save the whole library as a JSON file (backup / move to another PC). */
+export async function exportLibraryFile(): Promise<boolean> {
+  const lib = await getLibrary()
+  const blob = new Blob([JSON.stringify(lib, null, 2)], { type: 'application/json' })
+  const date = new Date().toISOString().slice(0, 10)
+  return saveBlob(blob, `koharu-library-${date}.json`)
+}
+
+/**
+ * Merge a library JSON file into the library. Returns `null` when the user
+ * cancelled the file picker.
+ */
+export async function importLibraryFile(): Promise<{ added: number; updated: number } | null> {
+  const file = await openJsonFile('Koharu library')
+  if (!file) return null
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(await file.text())
+  } catch {
+    throw new Error('not a JSON file')
+  }
+  const lib = parsed as Partial<Library>
+  if (!lib || (!Array.isArray(lib.characters) && !Array.isArray(lib.terms))) {
+    throw new Error('not a Koharu library file')
+  }
+  const res = await post<{ library: Library; added: number; updated: number }>(
+    `${LIBRARY_URL}/import`,
+    { characters: lib.characters ?? [], terms: lib.terms ?? [] },
+  )
+  storeLibrary(res.library)
+  return { added: res.added, updated: res.updated }
 }

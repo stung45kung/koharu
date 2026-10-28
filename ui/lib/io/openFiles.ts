@@ -95,6 +95,34 @@ export async function openImageFolder(): Promise<ImagePickerResult> {
   }
 }
 
+/** Pick one JSON file (e.g. an exported library). `null` if cancelled. */
+export async function openJsonFile(description: string): Promise<File | null> {
+  if (isTauri()) {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: description, extensions: ['json'] }],
+    })
+    if (!picked || typeof picked !== 'string') return null
+    const [file] = await readTauriFiles([picked])
+    return file ?? null
+  }
+
+  const { fileOpen } = await import('browser-fs-access')
+  try {
+    const result = await fileOpen({
+      multiple: false,
+      extensions: ['.json'],
+      mimeTypes: ['application/json'],
+      description,
+    })
+    return Array.isArray(result) ? (result[0] ?? null) : result
+  } catch (e) {
+    if (isAbort(e)) return null
+    throw e
+  }
+}
+
 /** Pick one `.khr` archive file. Returns `null` if cancelled. */
 export async function openKhrFile(): Promise<File | null> {
   if (isTauri()) {

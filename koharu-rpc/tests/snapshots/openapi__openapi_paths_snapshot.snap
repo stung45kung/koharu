@@ -171,6 +171,12 @@ expression: paths
         ],
     ),
     (
+        "/library/import",
+        [
+            "post",
+        ],
+    ),
+    (
         "/library/save",
         [
             "post",

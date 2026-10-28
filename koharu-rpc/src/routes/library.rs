@@ -26,6 +26,7 @@ pub fn router() -> OpenApiRouter<AppState> {
         .routes(routes!(save_to_library))
         .routes(routes!(apply_from_library))
         .routes(routes!(delete_from_library))
+        .routes(routes!(import_library))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
@@ -179,4 +180,23 @@ async fn delete_from_library(Json(req): Json<LibraryKeysRequest>) -> ApiResult<J
         library::save(&library::default_dir(), &lib).map_err(ApiError::internal)?;
     }
     Ok(Json(lib))
+}
+
+/// Merge an exported library file (the JSON of `GET /library`) into the
+/// library: same series + name / term updates, new items are added.
+#[utoipa::path(
+    post,
+    path = "/library/import",
+    request_body = Library,
+    responses((status = 200, body = SaveToLibraryResponse))
+)]
+async fn import_library(Json(incoming): Json<Library>) -> ApiResult<Json<SaveToLibraryResponse>> {
+    let mut lib = load().await?;
+    let (added, updated) = library::merge_library(&mut lib, &incoming);
+    library::save(&library::default_dir(), &lib).map_err(ApiError::internal)?;
+    Ok(Json(SaveToLibraryResponse {
+        library: lib,
+        added,
+        updated,
+    }))
 }

@@ -242,6 +242,34 @@ pub fn save_from_project(
     (ca + ta, cu + tu)
 }
 
+/// Merge another library (an exported file) into `lib`: items are matched
+/// by series + name / source term and updated, new ones added. Returns
+/// `(added, updated)`.
+pub fn merge_library(lib: &mut Library, incoming: &Library) -> (usize, usize) {
+    let (mut added, mut updated) = (0, 0);
+    for c in &incoming.characters {
+        let (a, u) = upsert_characters(
+            lib,
+            c.series.trim(),
+            std::slice::from_ref(&c.character),
+            c.updated_at_ms,
+        );
+        added += a;
+        updated += u;
+    }
+    for t in &incoming.terms {
+        let (a, u) = upsert_terms(
+            lib,
+            t.series.trim(),
+            std::slice::from_ref(&t.entry),
+            t.updated_at_ms,
+        );
+        added += a;
+        updated += u;
+    }
+    (added, updated)
+}
+
 /// Remove items by key. Returns how many were removed.
 pub fn remove(lib: &mut Library, character_keys: &[Uuid], term_keys: &[Uuid]) -> usize {
     let before = lib.characters.len() + lib.terms.len();
@@ -366,6 +394,23 @@ mod tests {
         let key = lib.characters[1].key;
         assert_eq!(remove(&mut lib, &[key], &[]), 1);
         assert_eq!(lib.characters.len(), 1);
+    }
+
+    #[test]
+    fn importing_an_exported_library_merges_by_series_and_name() {
+        let mut mine = Library::default();
+        save_from_project(&mut mine, "S", &[ch(1, "A", "old")], &[entry("剣", "ดาบ")]);
+        let mut other = Library::default();
+        save_from_project(
+            &mut other,
+            "S",
+            &[ch(2, "a", "new"), ch(3, "B", "")],
+            &[entry("剣", "ดาบ")],
+        );
+        let (added, updated) = merge_library(&mut mine, &other);
+        assert_eq!((added, updated), (1, 1));
+        assert_eq!(mine.characters.len(), 2);
+        assert_eq!(mine.characters[0].character.description, "new");
     }
 
     #[test]

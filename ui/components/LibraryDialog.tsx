@@ -1,6 +1,13 @@
 'use client'
 
-import { ArrowLeftIcon, ArrowRightIcon, Loader2Icon, Trash2Icon } from 'lucide-react'
+import {
+  ArrowLeftIcon,
+  ArrowRightIcon,
+  DownloadIcon,
+  Loader2Icon,
+  Trash2Icon,
+  UploadIcon,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -11,6 +18,8 @@ import { useScene } from '@/hooks/useScene'
 import { useCharacters } from '@/lib/characters'
 import { useGlossaryQuery } from '@/lib/glossary'
 import {
+  exportLibraryFile,
+  importLibraryFile,
   useApplyFromLibrary,
   useDeleteFromLibrary,
   useLibrary,
@@ -388,6 +397,35 @@ export function LibraryDialog({ open, onOpenChange }: Props) {
         </div>
 
         <div className='flex shrink-0 items-center justify-end gap-2'>
+          <Button
+            variant='outline'
+            size='xs'
+            className='text-[11px]'
+            data-testid='library-export'
+            onClick={() =>
+              void run(async () =>
+                (await exportLibraryFile()) ? t('library.exported') : '',
+              )
+            }
+          >
+            <DownloadIcon className='size-3' />
+            {t('library.export')}
+          </Button>
+          <Button
+            variant='outline'
+            size='xs'
+            className='text-[11px]'
+            data-testid='library-import'
+            onClick={() =>
+              void run(async () => {
+                const res = await importLibraryFile()
+                return res ? t('library.imported', res) : ''
+              })
+            }
+          >
+            <UploadIcon className='size-3' />
+            {t('library.import')}
+          </Button>
           <p className='mr-auto text-[10px] text-muted-foreground'>{t('library.hint')}</p>
           {message && <p className='text-xs text-emerald-600'>{message}</p>}
           {error && <p className='text-xs text-rose-600'>{error}</p>}

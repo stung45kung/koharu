@@ -90,7 +90,9 @@ impl AnyProvider for OpenAiCompatibleProvider {
                     system_prompt: prompt,
                     user_prompt: source.to_string(),
                     temperature: self.temperature,
-                    max_tokens: self.max_tokens,
+                    // Without a limit a local model stuck repeating a sound
+                    // generates until its context is full.
+                    max_tokens: self.max_tokens.or(Some(default_max_tokens(source))),
                 },
             )
             .await
@@ -98,9 +100,24 @@ impl AnyProvider for OpenAiCompatibleProvider {
     }
 }
 
+/// Output budget when none is configured: generous for a translation of
+/// `source` (Thai and other scripts take several tokens per source
+/// character) yet small enough to stop a looping model quickly.
+fn default_max_tokens(source: &str) -> u32 {
+    let chars = source.chars().count() as u32;
+    chars.saturating_mul(4).saturating_add(1024).min(8192)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::normalized_base_url;
+    use super::{default_max_tokens, normalized_base_url};
+
+    #[test]
+    fn output_budget_grows_with_the_source_and_is_capped() {
+        assert_eq!(default_max_tokens(""), 1024);
+        assert_eq!(default_max_tokens(&"あ".repeat(100)), 1424);
+        assert_eq!(default_max_tokens(&"あ".repeat(100_000)), 8192);
+    }
 
     #[test]
     fn trims_trailing_slashes() {

@@ -47,7 +47,7 @@ pub struct PromptRenderer {
     eos_token: String,
 }
 
-pub const BLOCK_TAG_INSTRUCTIONS: &str = "The input uses numbered tags like [1], [2], etc. to mark each text block. Translate only the text after each tag. Keep every tag exactly unchanged, including numbers and order. Output the same tags followed by the translated text. Do not merge, split, or reorder blocks.";
+pub const BLOCK_TAG_INSTRUCTIONS: &str = "The input uses numbered tags like [1], [2], etc. to mark each text block. Translate only the text after each tag. Keep every tag exactly unchanged, including numbers and order. Output the same tags followed by the translated text. Do not merge, split, or reorder blocks. Keep repeated sounds (moans, gasps, laughter, stutters) short: write a sound at most a few times and never stretch a letter endlessly.";
 
 /// Default translator instructions without the block-tag rules. Used as the
 /// base when extra context (e.g. speaker profiles) is appended to a custom

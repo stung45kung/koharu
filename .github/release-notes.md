@@ -7,7 +7,7 @@ show a SmartScreen warning because the installer is not code-signed: click
 **Added in this fork**
 - Characters: profiles, per-character font / colour / size / bold / italic /
   alignment / outline, speech cues (can be drafted from confirmed lines).
-- Speakers: choose per block, guess automatically (uses block positions,
+- Speakers: choose per block (keys 1–9 / 0 unknown / O other), guess automatically (uses block positions,
   the previous page and confirmed lines as examples), "Other (not in list)",
   Guess speakers as a pipeline step.
 - Translation: character profiles, glossary and previous-page context sent

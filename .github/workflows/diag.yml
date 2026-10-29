@@ -1,0 +1,35 @@
+# TEMPORARY: Koharu's PaddleOCR-VL on enlarged blocks.
+name: Diag
+on:
+  push:
+    branches: ['feature/character-speakers']
+permissions:
+  contents: read
+jobs:
+  ocr:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: Swatinem/rust-cache@v2
+      - run: pip install pillow huggingface_hub
+      - run: python .github/diag/scale.py
+      - run: |
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          import shutil, os
+          os.makedirs("paddle", exist_ok=True)
+          for f in ["PaddleOCR-VL-1.6-GGUF.gguf", "PaddleOCR-VL-1.6-GGUF-mmproj.gguf"]:
+              shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", f), "paddle/" + f)
+          PY
+      - run: cargo build --release -p koharu-llm --bin paddleocr-vl-llm 2>&1 | tail -3
+      - name: run
+        run: |
+          for f in crops/*.png; do
+            ./target/release/paddleocr-vl-llm --cpu --model-dir paddle --max-new-tokens 256 --input "$f" > raw.txt 2>err.txt
+            out=$(sed 's/\x1b\[[0-9;]*m//g' raw.txt | grep -v ' INFO \| DEBUG \| WARN ' | tr '\n' '|' | tail -c 300)
+            size=$(python -c "from PIL import Image; i=Image.open('$f'); print(i.size)")
+            echo "::notice title=$f $size::$out"
+          done

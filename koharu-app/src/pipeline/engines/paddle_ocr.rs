@@ -10,12 +10,14 @@ use anyhow::Result;
 use async_trait::async_trait;
 use koharu_core::{NodeDataPatch, NodePatch, Op, TextDataPatch};
 use koharu_llm::paddleocr_vl::{PaddleOcrVl, PaddleOcrVlTask};
-use koharu_ml::comic_text_detector::crop_text_block_bbox;
 
 use crate::app::shared_llama_backend;
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
-use crate::pipeline::engines::support::{load_source_image, text_node_to_region, text_nodes};
+use crate::pipeline::engines::ocr_columns::{join_columns, ocr_crops};
+use crate::pipeline::engines::support::{
+    load_source_image, segment_mask, text_node_to_region, text_nodes,
+};
 
 const MAX_NEW_TOKENS: usize = 256;
 
@@ -29,13 +31,16 @@ impl Engine for Model {
             return Ok(Vec::new());
         }
         let image = load_source_image(ctx.scene, ctx.page, ctx.blobs)?;
-        let regions: Vec<_> = texts
+        let mask = segment_mask(&ctx)?;
+        // Vertical blocks are read column by column (see `ocr_columns`).
+        let per_block: Vec<Vec<_>> = texts
             .iter()
             .map(|(_, transform, text)| {
                 let region = text_node_to_region(transform, text);
-                crop_text_block_bbox(&image, &region)
+                ocr_crops(&image, mask.as_ref(), &region)
             })
             .collect();
+        let regions: Vec<_> = per_block.iter().flatten().cloned().collect();
 
         let outputs = {
             let mut ocr = self
@@ -44,6 +49,11 @@ impl Engine for Model {
                 .map_err(|_| anyhow::anyhow!("PaddleOCR mutex poisoned"))?;
             ocr.inference_images(&regions, PaddleOcrVlTask::Ocr, MAX_NEW_TOKENS)?
         };
+        let mut read = outputs.into_iter().map(|out| out.text);
+        let outputs: Vec<String> = per_block
+            .iter()
+            .map(|parts| join_columns(read.by_ref().take(parts.len()).collect()))
+            .collect();
 
         let mut ops = Vec::with_capacity(texts.len());
         for ((node_id, _, _), out) in texts.iter().zip(outputs) {
@@ -52,7 +62,7 @@ impl Engine for Model {
                 id: *node_id,
                 patch: NodePatch {
                     data: Some(NodeDataPatch::Text(TextDataPatch {
-                        text: Some(Some(out.text)),
+                        text: Some(Some(out)),
                         ..Default::default()
                     })),
                     transform: None,

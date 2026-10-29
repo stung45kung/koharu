@@ -38,6 +38,16 @@ pub fn load_source_image(scene: &Scene, page: PageId, blobs: &BlobStore) -> Resu
     blobs.load_image(&img_data.blob)
 }
 
+/// The page's text segmentation mask (greyscale), if it has one.
+pub fn segment_mask(
+    ctx: &crate::pipeline::engine::EngineCtx<'_>,
+) -> Result<Option<image::GrayImage>> {
+    let Some((_, blob)) = find_mask_node(ctx.scene, ctx.page, MaskRole::Segment) else {
+        return Ok(None);
+    };
+    Ok(Some(ctx.blobs.load_image(&blob)?.to_luma8()))
+}
+
 /// Find a node of `Image { role }` on `page`, if any.
 pub fn find_image_node(scene: &Scene, page: PageId, role: ImageRole) -> Option<(NodeId, BlobRef)> {
     let page = scene.page(page)?;

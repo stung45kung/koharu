@@ -107,6 +107,17 @@ pub trait AnyProvider: Send + Sync {
         model: &'a str,
         custom_system_prompt: Option<&'a str>,
     ) -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send + 'a>>;
+
+    /// Answer `instructions` about one PNG image (e.g. read its text).
+    /// Providers without image input return an error.
+    fn read_image<'a>(
+        &'a self,
+        _png: &'a [u8],
+        _instructions: &'a str,
+        _model: &'a str,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send + 'a>> {
+        Box::pin(async { anyhow::bail!("this LLM provider cannot read images") })
+    }
 }
 
 #[derive(Clone)]

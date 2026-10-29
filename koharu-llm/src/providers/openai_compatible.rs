@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use crate::Language;
 
-use super::chat_completions::{ChatCompletionsAuth, ChatCompletionsRequest, send_chat_completion};
+use super::chat_completions::{
+    ChatCompletionsAuth, ChatCompletionsRequest, VisionRequest, send_chat_completion,
+    send_vision_completion,
+};
 use super::{AnyProvider, ensure_provider_success, resolve_system_prompt};
 
 #[derive(Debug, Clone)]
@@ -93,6 +96,34 @@ impl AnyProvider for OpenAiCompatibleProvider {
                     // Without a limit a local model stuck repeating a sound
                     // generates until its context is full.
                     max_tokens: self.max_tokens.or(Some(default_max_tokens(source))),
+                },
+            )
+            .await
+        })
+    }
+
+    fn read_image<'a>(
+        &'a self,
+        png: &'a [u8],
+        instructions: &'a str,
+        model: &'a str,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send + 'a>> {
+        Box::pin(async move {
+            send_vision_completion(
+                Arc::clone(&self.http_client),
+                VisionRequest {
+                    provider: "openai-compatible",
+                    endpoint: format!("{}/chat/completions", normalized_base_url(&self.base_url)?),
+                    auth: self
+                        .api_key
+                        .as_deref()
+                        .filter(|value| !value.trim().is_empty())
+                        .map(|key| ChatCompletionsAuth::Bearer(key.to_string()))
+                        .unwrap_or(ChatCompletionsAuth::None),
+                    model: model.to_string(),
+                    instructions: instructions.to_string(),
+                    png: png.to_vec(),
+                    max_tokens: 512,
                 },
             )
             .await

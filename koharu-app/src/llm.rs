@@ -248,6 +248,38 @@ impl Model {
     }
 }
 
+impl Model {
+    /// Ask the loaded LLM `instructions` about each image (e.g. to read its
+    /// text). Needs a provider that accepts images, such as LM Studio with
+    /// a vision model; the built-in local models cannot.
+    pub async fn read_images(
+        &self,
+        images: &[image::DynamicImage],
+        instructions: &str,
+    ) -> Result<Vec<String>> {
+        let guard = self.state.read().await;
+        let (target, provider) = match &*guard {
+            State::ReadyProvider { target, provider } => (target, provider),
+            State::ReadyLocal(_) => anyhow::bail!(
+                "the built-in LLM cannot read images: load a vision model through an API provider (e.g. LM Studio)"
+            ),
+            State::Loading { .. } => anyhow::bail!("LLM is still loading"),
+            State::Failed { error, .. } => anyhow::bail!("LLM failed to load: {error}"),
+            State::Empty => anyhow::bail!("no LLM loaded"),
+        };
+        let mut out = Vec::with_capacity(images.len());
+        for image in images {
+            let mut png = std::io::Cursor::new(Vec::new());
+            image.write_to(&mut png, image::ImageFormat::Png)?;
+            let reply = provider
+                .read_image(png.get_ref(), instructions, &target.model_id)
+                .await?;
+            out.push(strip_thinking_block(&reply).to_string());
+        }
+        Ok(out)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Provider configuration + construction
 // ---------------------------------------------------------------------------

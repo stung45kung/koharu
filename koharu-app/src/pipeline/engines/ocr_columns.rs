@@ -308,15 +308,11 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
 /// Runs `(first, last + 1)` of `rows` (sorted), top to bottom; rows at
 /// most `max_gap` empty rows apart belong to one run.
 fn glyph_runs(rows: &[u32], max_gap: u32) -> Vec<(u32, u32)> {
-    let mut runs = Vec::new();
-    let mut start = 0;
-    for i in 0..rows.len() {
-        if rows
-            .get(i + 1)
-            .is_none_or(|&next| next - rows[i] > max_gap + 1)
-        {
-            runs.push((rows[start], rows[i] + 1));
-            start = i + 1;
+    let mut runs: Vec<(u32, u32)> = Vec::new();
+    for &y in rows {
+        match runs.last_mut() {
+            Some(run) if y - run.1 <= max_gap => run.1 = y + 1,
+            _ => runs.push((y, y + 1)),
         }
     }
     runs

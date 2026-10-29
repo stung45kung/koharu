@@ -1,0 +1,43 @@
+# TEMPORARY: run Detect + PaddleOCR-VL on a real page. Remove before merging.
+name: Diag
+on:
+  push:
+    branches: ['feature/character-speakers']
+permissions:
+  contents: read
+jobs:
+  page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+      - run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev >/dev/null
+      - name: build
+        run: cargo build --release -p koharu-app --bin pipeline 2>&1 | tail -3
+      - name: run
+        env:
+          RUST_LOG: info,koharu_app::pipeline::engines::ocr_columns=debug
+        run: |
+          ./target/release/pipeline --cpu --input .github/diag/page.jpg --output-dir out \
+            --steps pp-doclayout-v3,comic-text-detector-seg,yuzumarker-font-detection,paddle-ocr-vl-1.6 \
+            2> log.txt || true
+          sed 's/\x1b\[[0-9;]*m//g' log.txt | grep -E "ocr column split|ERROR|error" | cut -c1-900 | head -20 | while IFS= read -r l; do echo "::notice title=log::$l"; done
+          python3 - <<'PY'
+          import json
+          s = json.load(open("out/scene.json"))
+          pages = s.get("pages") or s.get("scene", {}).get("pages")
+          for p in pages.values():
+              for nid, n in p["nodes"].items():
+                  t = n.get("kind", {}).get("text")
+                  if t is not None:
+                      tr = n["transform"]
+                      print(f"::notice title=block {int(tr['x'])},{int(tr['y'])} {int(tr['width'])}x{int(tr['height'])} dir={t.get('sourceDirection')}::{t.get('text')}")
+          PY
+          ls out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: page-out
+          path: out/
+          retention-days: 1

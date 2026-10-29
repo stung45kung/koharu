@@ -66,6 +66,16 @@ pub fn ocr_crops(
         Some(direction) => direction == TextDirection::Vertical,
         None => block.height > block.width * 1.2,
     };
+    tracing::debug!(
+        x = block.x,
+        y = block.y,
+        w = block.width,
+        h = block.height,
+        vertical,
+        has_mask = mask.is_some(),
+        ?colors,
+        "ocr column split"
+    );
     if !vertical || block.rotation_deg.is_some_and(|r| r.abs() > 3.0) {
         return whole();
     }
@@ -89,6 +99,7 @@ pub fn ocr_crops(
     .flatten()
     {
         let columns = vertical_columns(&ink, block);
+        tracing::debug!(columns = ?columns, "ocr column split attempt");
         if usable(&columns) {
             found = Some((ink, columns));
             break;

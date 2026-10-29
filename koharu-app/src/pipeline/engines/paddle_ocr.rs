@@ -14,7 +14,9 @@ use koharu_llm::paddleocr_vl::{PaddleOcrVl, PaddleOcrVlTask};
 use crate::app::shared_llama_backend;
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
-use crate::pipeline::engines::ocr_columns::{TextColors, join_columns, ocr_crops};
+use crate::pipeline::engines::ocr_columns::{
+    TextColors, join_columns, ocr_crops, shrink_for_reading,
+};
 use crate::pipeline::engines::support::{
     load_source_image, segment_mask, text_node_to_region, text_nodes,
 };
@@ -42,7 +44,13 @@ impl Engine for Model {
                     fill: p.text_color,
                     outline: (p.stroke_width_px > 0.5).then_some(p.stroke_color),
                 });
+                // Large glyphs (high-resolution pages) make the model read
+                // across columns: shrink to its comfortable size.
+                let glyph = text.font_prediction.as_ref().map(|p| p.font_size_px);
                 ocr_crops(&image, &rgb, mask.as_ref(), colors, &region)
+                    .into_iter()
+                    .map(|c| shrink_for_reading(c, glyph))
+                    .collect::<Vec<_>>()
             })
             .collect();
         let regions: Vec<_> = per_block.iter().flatten().cloned().collect();

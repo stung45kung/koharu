@@ -24,6 +24,11 @@ jobs:
           for f in ["PaddleOCR-VL-1.6-GGUF.gguf", "PaddleOCR-VL-1.6-GGUF-mmproj.gguf"]:
               shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", f), "paddle/" + f)
           PY
+      - name: clippy
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev >/dev/null
+          cargo clippy --message-format=short -- -D warnings > clippy.txt 2>&1 || true
+          grep -E '(error|warning)(\[|:)' clippy.txt | head -8 | while IFS= read -r line; do echo "::notice title=clippy::${line//%/%25}"; done
       - run: cargo build --release -p koharu-llm --bin paddleocr-vl-llm 2>&1 | tail -3
       - name: run
         run: |

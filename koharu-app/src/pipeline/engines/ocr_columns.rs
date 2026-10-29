@@ -318,6 +318,31 @@ fn glyph_runs(rows: &[u32], max_gap: u32) -> Vec<(u32, u32)> {
     runs
 }
 
+/// Glyph size (px) vision OCR models read best at. PaddleOCR-VL reads
+/// a block right at about 40-60 px per glyph but goes wrong when glyphs
+/// are 2-3 times that (it read straight across the columns), which crops
+/// from high-resolution pages easily are.
+const READING_GLYPH_PX: f32 = 48.0;
+/// Without a glyph size, a crop's shorter side is kept at most this long.
+const READING_MAX_SHORT_SIDE: u32 = 160;
+
+/// `crop` scaled down so its glyphs are about [`READING_GLYPH_PX`] tall
+/// (`glyph_px`: their size in the crop, e.g. from the font detector), or
+/// its shorter side at most [`READING_MAX_SHORT_SIDE`]. Never enlarged.
+pub fn shrink_for_reading(crop: DynamicImage, glyph_px: Option<f32>) -> DynamicImage {
+    let short = crop.width().min(crop.height()).max(1) as f32;
+    let scale = match glyph_px.filter(|g| g.is_finite() && *g > 1.0) {
+        Some(glyph) => READING_GLYPH_PX / glyph,
+        None => READING_MAX_SHORT_SIDE as f32 / short,
+    };
+    if scale >= 1.0 {
+        return crop;
+    }
+    let w = ((crop.width() as f32 * scale).round() as u32).max(1);
+    let h = ((crop.height() as f32 * scale).round() as u32).max(1);
+    crop.resize_exact(w, h, image::imageops::FilterType::Triangle)
+}
+
 /// Join the text read from one block's crops.
 pub fn join_columns(parts: Vec<String>) -> String {
     parts.concat()

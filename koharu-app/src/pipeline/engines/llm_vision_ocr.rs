@@ -12,7 +12,9 @@ use koharu_ml::comic_text_detector::crop_text_block_bbox;
 
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
-use crate::pipeline::engines::ocr_columns::{TextColors, join_columns, ocr_crops};
+use crate::pipeline::engines::ocr_columns::{
+    TextColors, join_columns, ocr_crops, shrink_for_reading,
+};
 use crate::pipeline::engines::support::{
     load_source_image, segment_mask, text_node_to_region, text_nodes,
 };
@@ -57,7 +59,11 @@ impl Engine for Model {
                 } else {
                     vec![crop_text_block_bbox(&image, &region)]
                 };
-                crops.into_iter().map(enlarge_small).collect()
+                let glyph = text.font_prediction.as_ref().map(|p| p.font_size_px);
+                crops
+                    .into_iter()
+                    .map(|c| enlarge_small(shrink_for_reading(c, glyph)))
+                    .collect()
             })
             .collect();
         let crops: Vec<DynamicImage> = per_block.iter().flatten().cloned().collect();

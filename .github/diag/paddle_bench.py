@@ -70,6 +70,8 @@ def paddle(img, path):
     out = subprocess.run(["./llama/llama-mtmd-cli", "-m", "m.gguf", "--mmproj", "mm.gguf",
         "--image", path, "-p", "OCR:", "--temp", "0", "-n", "256"],
         capture_output=True, text=True)
+    if not out.stdout.strip():
+        print(f"::notice title=stderr {path}::" + " | ".join(out.stderr.strip().splitlines()[-6:])[:1500])
     return "".join(out.stdout.split())
 
 total = {"whole": 0, "columns": 0}; n = 0

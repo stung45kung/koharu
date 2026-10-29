@@ -29,6 +29,7 @@ jobs:
       - name: run
         run: |
           for f in crops/*.png; do
-            out=$(./target/release/paddleocr-vl-llm --cpu --model-dir paddle --max-new-tokens 256 --input "$f" 2>err.txt | grep -v '^== ' | tr -d '\n')
+            ./target/release/paddleocr-vl-llm --cpu --model-dir paddle --max-new-tokens 256 --input "$f" > raw.txt 2>err.txt
+            out=$(awk '/^== /{on=1; next} on' raw.txt | grep -v $'\x1b' | tr -d '\n')
             if [ -z "$out" ]; then echo "::notice title=ERR $f::$(tail -c 600 err.txt | tr '\n' ' ')"; else echo "::notice title=$f::$out"; fi
           done

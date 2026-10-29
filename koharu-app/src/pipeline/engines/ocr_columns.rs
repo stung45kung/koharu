@@ -25,6 +25,9 @@ const MIN_GAP_SHARE: f32 = 0.05;
 /// close columns (stray outline or dots) stays below it.
 const MIN_INK_SHARE: f32 = 0.15;
 
+/// A column's `x1`, `x2` and its runs of glyphs (see [`glyph_runs`]).
+type ColumnRuns = (u32, u32, Vec<(u32, u32)>);
+
 /// Ink box of one column, unpadded: `x1..x2`, `top..bottom` (exclusive).
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Column {
@@ -247,7 +250,7 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
     // each column keeps the run starting nearest the block's first glyph;
     // other lettering further along the same strip (a sign in the scene,
     // say) is left out.
-    let column_runs: Vec<(u32, u32, Vec<(u32, u32)>)> = merged
+    let column_runs: Vec<ColumnRuns> = merged
         .into_iter()
         .map(|(x1, x2)| {
             let rows: Vec<u32> = (by1..by2)

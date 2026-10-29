@@ -568,7 +568,7 @@ function BlockCard({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
-                        data-testid={`textblock-ocr-${index}`}
+                        data-testid={`textblock-reocr-${index}`}
                         aria-label={t('textBlocks.ocrBlock')}
                         variant='ghost'
                         size='icon-xs'

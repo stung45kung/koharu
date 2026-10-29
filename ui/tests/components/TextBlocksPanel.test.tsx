@@ -105,7 +105,7 @@ describe('TextBlocksPanel', () => {
 
     renderWithQuery(<TextBlocksPanel />)
 
-    await userEvent.click(await screen.findByTestId('textblock-ocr-1'))
+    await userEvent.click(await screen.findByTestId('textblock-reocr-1'))
 
     await waitFor(() => expect(pipelineRequests).toHaveLength(1))
     expect(pipelineRequests[0]).toMatchObject({

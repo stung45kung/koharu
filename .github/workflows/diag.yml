@@ -17,11 +17,12 @@ jobs:
           python-version: '3.11'
       - run: pip install numpy pillow huggingface_hub
       - run: |
-          names=$(gh release view -R ggml-org/llama.cpp --json assets -q '.assets[].name' 2>&1 || true)
-          echo "::notice title=assets::$(echo "$names" | tr '\n' ' ' | cut -c1-1500)"
-          asset=$(echo "$names" | grep -iE 'ubuntu-x64\.(zip|tar\.gz)$' | head -1 || true)
-          echo "::notice title=asset::$asset"
-          gh release download -R ggml-org/llama.cpp --pattern "$asset" -O pkg
+          for tag in $(gh release list -R ggml-org/llama.cpp -L 15 --json tagName -q '.[].tagName'); do
+            asset=$(gh release view "$tag" -R ggml-org/llama.cpp --json assets -q '.assets[].name' | grep -iE 'bin-ubuntu-x64\.(zip|tar\.gz)$' | head -1 || true)
+            if [ -n "$asset" ]; then break; fi
+          done
+          echo "::notice title=asset::$tag $asset"
+          gh release download "$tag" -R ggml-org/llama.cpp --pattern "$asset" -O pkg
           mkdir raw && (unzip -q pkg -d raw 2>/dev/null || tar -xzf pkg -C raw)
           bin=$(dirname "$(find raw -name 'llama-mtmd-cli' -type f | head -1)")
           echo "bin=$bin"

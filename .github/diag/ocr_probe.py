@@ -49,7 +49,7 @@ for name in ["b1", "b2"]:
     im = Image.open(f".github/diag/{name}.png").convert("RGB")
     m = fill_mask(im)
     note(f"{name} whole", mocr(im))
-    cols = columns(m)
+    cols = {'b1': [(9, 45), (47, 82)], 'b2': [(10, 54), (56, 100), (101, 144)]}[name]
     note(f"{name} ncols", str(cols))
     crops = [col_crop(im, m, a, b) for a, b in reversed(cols)]
     note(f"{name} columns", "|".join(mocr(c) for c in crops))
@@ -63,3 +63,7 @@ for name in ["b1", "b2"]:
     note(f"{name} whole-square", mocr(sq))
     note(f"{name} columns-square", "|".join(
         mocr((lambda c: (lambda s: (s.paste(c, ((s.size[0]-c.size[0])//2, 0)), s)[1])(Image.new("RGB", (max(c.size), max(c.size)), (255,255,255))))(c)) for c in crops))
+
+    # Upscaled single columns.
+    note(f"{name} columns-x2", "|".join(mocr(c.resize((c.size[0]*2, c.size[1]*2), Image.LANCZOS)) for c in crops))
+    note(f"{name} columns-gray-pad", "|".join(mocr(col_crop(im, m, a, b, 0.6).convert('L')) for a, b in reversed(cols)))

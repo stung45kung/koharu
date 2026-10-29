@@ -45,15 +45,13 @@ def chunks(img, n):
 def note(title, text):
     print(f"::notice title={title}::{text}")
 
-for name in ["b1", "b2"]:
+for name in ["b2"]:
     im = Image.open(f".github/diag/{name}.png").convert("RGB")
     m = fill_mask(im)
     note(f"{name} whole", mocr(im))
     cols = {'b1': [(9, 45), (47, 82)], 'b2': [(10, 54), (56, 100), (101, 144)]}[name]
-    note(f"{name} ncols", str(cols))
     crops = [col_crop(im, m, a, b) for a, b in reversed(cols)]
     note(f"{name} columns", "|".join(mocr(c) for c in crops))
-    note(f"{name} columns-wide-pad", "|".join(mocr(col_crop(im, m, a, b, 0.5)) for a, b in reversed(cols)))
     for n in (2, 3):
         note(f"{name} columns-chunk{n}", "|".join("".join(mocr(p) for p in chunks(c, n)) for c in crops))
     # Whole block padded to a square (no squeeze).

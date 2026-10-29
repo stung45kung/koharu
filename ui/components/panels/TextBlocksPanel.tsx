@@ -7,6 +7,7 @@ import {
   SparklesIcon,
   Languages,
   LoaderCircleIcon,
+  ScanIcon,
   Trash2Icon,
   UsersIcon,
   WandSparklesIcon,
@@ -57,6 +58,7 @@ import {
   queueAutoRender,
   reorderPageTextNodes,
 } from '@/lib/io/scene'
+import { ocrBlocks } from '@/lib/ocrBlocks'
 import { ops } from '@/lib/ops'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { useJobsStore } from '@/lib/stores/jobsStore'
@@ -349,6 +351,12 @@ export function TextBlocksPanel() {
                   onPatch={(patch) => void patchText(node.id, patch)}
                   onDelete={() => void removeNode(node.id)}
                   onGenerate={() => void generate(node.id)}
+                  onOcr={() => {
+                    if (!page) return
+                    ocrBlocks(page.id, [node.id]).catch((err) =>
+                      useEditorUiStore.getState().showError(String(err)),
+                    )
+                  }}
                   onRevise={(instruction) => void generate(node.id, instruction)}
                   processing={isProcessing}
                   llmReady={llmReady}
@@ -418,6 +426,7 @@ type BlockCardProps = {
   onPatch: (patch: TextDataPatch) => void
   onDelete: () => void
   onGenerate: () => void
+  onOcr: () => void
   onRevise: (instruction: string) => void
   processing: boolean
   llmReady: boolean
@@ -433,6 +442,7 @@ function BlockCard({
   onPatch,
   onDelete,
   onGenerate,
+  onOcr,
   onRevise,
   processing,
   llmReady,
@@ -553,6 +563,24 @@ function BlockCard({
                     </TooltipTrigger>
                     <TooltipContent side='left' sideOffset={4}>
                       {t('workspace.deleteBlock')}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        data-testid={`textblock-ocr-${index}`}
+                        aria-label={t('textBlocks.ocrBlock')}
+                        variant='ghost'
+                        size='icon-xs'
+                        disabled={processing}
+                        onClick={onOcr}
+                        className='size-5'
+                      >
+                        <ScanIcon className='size-3' />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side='left' sideOffset={4}>
+                      {t('textBlocks.ocrBlock')}
                     </TooltipContent>
                   </Tooltip>
                   <Tooltip>

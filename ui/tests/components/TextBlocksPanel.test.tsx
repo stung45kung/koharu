@@ -90,6 +90,31 @@ describe('TextBlocksPanel', () => {
     })
   })
 
+  it('reads only the clicked block again with the configured OCR', async () => {
+    const pipelineRequests: unknown[] = []
+    server.use(
+      http.get('/api/v1/scene.json', () => HttpResponse.json(sceneWithTextNodes())),
+      http.get('/api/v1/config', () =>
+        HttpResponse.json({ pipeline: { ocr: 'paddle-ocr-vl-1.6' } }),
+      ),
+      http.post('/api/v1/pipelines', async ({ request }) => {
+        pipelineRequests.push(await request.json())
+        return HttpResponse.json({ operationId: 'op-1' })
+      }),
+    )
+
+    renderWithQuery(<TextBlocksPanel />)
+
+    await userEvent.click(await screen.findByTestId('textblock-ocr-1'))
+
+    await waitFor(() => expect(pipelineRequests).toHaveLength(1))
+    expect(pipelineRequests[0]).toMatchObject({
+      steps: ['paddle-ocr-vl-1.6'],
+      pages: ['p1'],
+      textNodeIds: ['t2'],
+    })
+  })
+
   it('shows the assigned speaker on the block header', async () => {
     server.use(
       http.get('/api/v1/scene.json', () => HttpResponse.json(sceneWithTextNodes())),

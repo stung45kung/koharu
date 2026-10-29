@@ -274,6 +274,7 @@
     "strokeHintBlock": "This block has its own outline. Reset style makes it follow the character / project again."
   },
   "textBlocks": {
+    "ocrBlock": "Read this block's text again (OCR)",
     "emptyPrompt": "Open an image to see text blocks.",
     "title": "Text Blocks ({{count}})",
     "none": "No text blocks yet. Run detection to populate the list.",
@@ -297,7 +298,9 @@
   "workspace": {
     "importPrompt": "Import a page to begin editing.",
     "deleteBlock": "Delete block",
-    "deleteSelected": "Delete selected"
+    "deleteSelected": "Delete selected",
+    "ocrBlock": "OCR this block",
+    "ocrSelected": "OCR selected blocks"
   },
   "statusBar": {
     "zoom": "Zoom",

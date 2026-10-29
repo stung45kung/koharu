@@ -81,6 +81,21 @@ pub fn text_nodes(scene: &Scene, page: PageId) -> Vec<(NodeId, &Transform, &Text
         .collect()
 }
 
+/// Text nodes a step works on: those named in the run's `text_node_ids`
+/// (e.g. re-reading one block after moving it), else every text node.
+pub fn target_text_nodes<'a>(
+    ctx: &crate::pipeline::engine::EngineCtx<'a>,
+) -> Vec<(NodeId, &'a Transform, &'a TextData)> {
+    let all = text_nodes(ctx.scene, ctx.page);
+    match ctx.options.text_node_ids.as_deref() {
+        Some(ids) if !ids.is_empty() => all
+            .into_iter()
+            .filter(|(id, _, _)| ids.contains(id))
+            .collect(),
+        _ => all,
+    }
+}
+
 /// Convert a scene `(Transform, TextData)` pair into a `koharu-ml` `TextRegion`
 /// for passing back through detector helpers that need geometry + language
 /// hints (e.g. CTD's `refine_segmentation_mask`, OCR's `extract_text_block_regions`).

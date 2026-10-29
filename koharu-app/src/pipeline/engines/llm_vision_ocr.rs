@@ -16,7 +16,7 @@ use crate::pipeline::engines::ocr_columns::{
     TextColors, join_columns, ocr_crops, shrink_for_reading,
 };
 use crate::pipeline::engines::support::{
-    load_source_image, segment_mask, text_node_to_region, text_nodes,
+    load_source_image, segment_mask, target_text_nodes, text_node_to_region,
 };
 
 const INSTRUCTIONS: &str = "This image is cut from a manga page and shows lettering \
@@ -39,7 +39,8 @@ pub struct Model {
 #[async_trait]
 impl Engine for Model {
     async fn run(&self, ctx: EngineCtx<'_>) -> Result<Vec<Op>> {
-        let texts = text_nodes(ctx.scene, ctx.page);
+        // Only the requested blocks when some are named (OCR one block).
+        let texts = target_text_nodes(&ctx);
         if texts.is_empty() {
             return Ok(Vec::new());
         }

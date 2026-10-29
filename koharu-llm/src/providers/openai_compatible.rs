@@ -123,7 +123,7 @@ impl AnyProvider for OpenAiCompatibleProvider {
                     model: model.to_string(),
                     instructions: instructions.to_string(),
                     png: png.to_vec(),
-                    max_tokens: 512,
+                    max_tokens: 2048,
                 },
             )
             .await

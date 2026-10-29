@@ -15,6 +15,7 @@ pub mod grow_boxes;
 pub mod lama;
 pub mod llm_translate;
 pub mod llm_vision_ocr;
+pub mod llm_vision_page_ocr;
 pub mod manga_ocr;
 pub mod mit48px_ocr;
 pub mod ocr_columns;

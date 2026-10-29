@@ -68,7 +68,7 @@ import subprocess, sys
 def paddle(img, path):
     img.save(path)
     out = subprocess.run(["./llama/llama-mtmd-cli", "-m", "m.gguf", "--mmproj", "mm.gguf",
-        "--image", path, "-p", "OCR:", "--temp", "0", "-n", "256"],
+        "--image", path, "-p", "OCR:", "--temp", "0", "-n", "256", "--jinja"],
         capture_output=True, text=True)
     if not out.stdout.strip():
         print(f"::notice title=stderr {path}::" + " | ".join(out.stderr.strip().splitlines()[-6:])[:1500])

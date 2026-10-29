@@ -1,4 +1,4 @@
-# TEMPORARY: PaddleOCR-VL benchmark. Remove before merging.
+# TEMPORARY: Koharu's own PaddleOCR-VL path on the reference blocks.
 name: Diag
 on:
   push:
@@ -8,37 +8,27 @@ permissions:
 jobs:
   ocr:
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - uses: Swatinem/rust-cache@v2
       - run: pip install numpy pillow huggingface_hub
-      - name: llama.cpp binaries
-        run: |
-          get() {
-            tag=$1; dir=$2
-            asset=$(gh release view "$tag" -R ggml-org/llama.cpp --json assets -q '.assets[].name' | grep -iE 'bin-ubuntu-x64\.(zip|tar\.gz)$' | head -1)
-            echo "::notice title=asset $dir::$tag $asset"
-            gh release download "$tag" -R ggml-org/llama.cpp --pattern "$asset" -O "$dir.pkg"
-            mkdir "$dir.raw" && (unzip -q "$dir.pkg" -d "$dir.raw" 2>/dev/null || tar -xzf "$dir.pkg" -C "$dir.raw")
-            bin=$(dirname "$(find "$dir.raw" -name 'llama-mtmd-cli' -type f | head -1)")
-            mkdir "$dir" && cp -r "$bin"/* "$dir"/
-          }
-          get b11981 new
-          get b8935 old
+      - run: python .github/diag/make_crops.py
       - run: |
           python - <<'PY'
           from huggingface_hub import hf_hub_download
-          import shutil
-          shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", "PaddleOCR-VL-1.6-GGUF.gguf"), "m.gguf")
-          shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", "PaddleOCR-VL-1.6-GGUF-mmproj.gguf"), "mm.gguf")
+          import shutil, os
+          os.makedirs("paddle", exist_ok=True)
+          for f in ["PaddleOCR-VL-1.6-GGUF.gguf", "PaddleOCR-VL-1.6-GGUF-mmproj.gguf"]:
+              shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", f), "paddle/" + f)
           PY
-      - name: old llama.cpp (Koharu's b8935)
-        run: LD_LIBRARY_PATH=$PWD/old python .github/diag/paddle_bench.py old
-      - name: new llama.cpp with Koharu's repetition penalty
-        run: LD_LIBRARY_PATH=$PWD/new python .github/diag/paddle_bench.py new --repeat-penalty 1.2 --repeat-last-n -1
-      - name: old llama.cpp with Koharu's repetition penalty
-        run: LD_LIBRARY_PATH=$PWD/old python .github/diag/paddle_bench.py old --repeat-penalty 1.2 --repeat-last-n -1
+      - name: build
+        run: cargo build --release -p koharu-llm --bin paddleocr-vl-llm 2>&1 | tail -3
+      - name: run
+        run: |
+          for f in crops/*.png; do
+            out=$(./target/release/paddleocr-vl-llm --cpu --model-dir paddle --max-new-tokens 256 --input "$f" 2>err.txt | grep -v '^== ' | tr -d '\n')
+            if [ -z "$out" ]; then echo "::notice title=ERR $f::$(tail -c 600 err.txt | tr '\n' ' ')"; else echo "::notice title=$f::$out"; fi
+          done

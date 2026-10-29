@@ -23,7 +23,6 @@ jobs:
           ./target/release/pipeline --cpu --input .github/diag/page.jpg --output-dir out \
             --steps pp-doclayout-v3,comic-text-detector-seg,yuzumarker-font-detection,paddle-ocr-vl-1.6 \
             2> log.txt || true
-          sed 's/\x1b\[[0-9;]*m//g' log.txt | grep -E "ocr column split|ERROR|error" | cut -c1-900 | head -20 | while IFS= read -r l; do echo "::notice title=log::$l"; done
           python3 - <<'PY'
           import json
           s = json.load(open("out/scene.json"))

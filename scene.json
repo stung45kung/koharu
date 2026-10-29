@@ -1,0 +1,483 @@
+{
+  "project": {
+    "name": "cli",
+    "createdAt": "2026-10-29T14:41:34.395474282Z",
+    "updatedAt": "2026-10-29T14:41:34.395475274Z",
+    "style": {
+      "defaultFont": null
+    }
+  },
+  "pages": {
+    "01a1881b-eecb-7902-b881-f47dd0aca05e": {
+      "id": "01a1881b-eecb-7902-b881-f47dd0aca05e",
+      "name": "page.jpg",
+      "width": 1819,
+      "height": 2576,
+      "nodes": {
+        "01a1881b-eecb-7902-b881-f48c323f33c6": {
+          "id": "01a1881b-eecb-7902-b881-f48c323f33c6",
+          "transform": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.0,
+            "height": 0.0,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "image": {
+              "role": "source",
+              "blob": "91f7ca9f6e5334d54e06adfd29e50f1d976f7f34df0664e98cf53a4cc783314d",
+              "opacity": 1.0,
+              "naturalWidth": 1819,
+              "naturalHeight": 2576,
+              "name": "page.jpg"
+            }
+          }
+        },
+        "01a1881c-edee-7011-bb22-b570f874b321": {
+          "id": "01a1881c-edee-7011-bb22-b570f874b321",
+          "transform": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.0,
+            "height": 0.0,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "image": {
+              "role": "inpainted",
+              "blob": "3c276bb5c0f55b71680ef456ead0f61dcbf0c5ed2181300794548ace37bb03a6",
+              "opacity": 1.0,
+              "naturalWidth": 1819,
+              "naturalHeight": 2576,
+              "name": null
+            }
+          }
+        },
+        "01a1881b-ff5a-7f51-9483-82caf199c90d": {
+          "id": "01a1881b-ff5a-7f51-9483-82caf199c90d",
+          "transform": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.0,
+            "height": 0.0,
+            "rotationDeg": 0.0
+          },
+          "visible": false,
+          "kind": {
+            "mask": {
+              "role": "bubble",
+              "blob": "0277cdf50f8be645bdf25c11300d74cfeb344117a9132face281328a598ea436"
+            }
+          }
+        },
+        "01a1881c-179a-7102-b244-e3753bfbc9c0": {
+          "id": "01a1881c-179a-7102-b244-e3753bfbc9c0",
+          "transform": {
+            "x": 1224.3003,
+            "y": 155.36743,
+            "width": 233.2439,
+            "height": 836.85144,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "text": {
+              "confidence": 0.8046848,
+              "sourceLang": "unknown",
+              "sourceDirection": "vertical",
+              "renderedDirection": null,
+              "linePolygons": null,
+              "rotationDeg": 0.0,
+              "detectedFontSizePx": 233.2439,
+              "detector": "pp-doclayout-v3",
+              "text": "どうした？なんや大人しいのぅ",
+              "translation": "どうした？なんや大人しいのぅ",
+              "style": null,
+              "fontPrediction": {
+                "topFonts": [
+                  {
+                    "index": 2022,
+                    "score": 0.91383564
+                  }
+                ],
+                "namedFonts": [
+                  {
+                    "index": 2022,
+                    "name": "Fontworks/日文/丸ゴシック体（圆体）/FOT-UDMarugo_SmallPr6-E.otf",
+                    "language": "ja",
+                    "probability": 0.91383564,
+                    "serif": false
+                  }
+                ],
+                "direction": "vertical",
+                "textColor": [
+                  67,
+                  130,
+                  172
+                ],
+                "strokeColor": [
+                  218,
+                  244,
+                  233
+                ],
+                "fontSizePx": 85.57308,
+                "strokeWidthPx": 15.091234,
+                "lineHeight": 1.2635076,
+                "angleDeg": 0.14994621
+              },
+              "sprite": null,
+              "spriteTransform": null,
+              "lockLayoutBox": false
+            }
+          }
+        },
+        "01a1881c-179a-7102-b244-e38445c19ceb": {
+          "id": "01a1881c-179a-7102-b244-e38445c19ceb",
+          "transform": {
+            "x": 426.96326,
+            "y": 142.89966,
+            "width": 280.08215,
+            "height": 1040.9196,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "text": {
+              "confidence": 0.86080396,
+              "sourceLang": "unknown",
+              "sourceDirection": "vertical",
+              "renderedDirection": null,
+              "linePolygons": null,
+              "rotationDeg": 0.0,
+              "detectedFontSizePx": 280.08215,
+              "detector": "pp-doclayout-v3",
+              "text": "いっちょまえに恥ずかしいんか？裸エプロンが",
+              "translation": "いっちょまえに恥ずかしいんか？裸エプロンが",
+              "style": null,
+              "fontPrediction": {
+                "topFonts": [
+                  {
+                    "index": 2030,
+                    "score": 0.7734006
+                  }
+                ],
+                "namedFonts": [
+                  {
+                    "index": 2030,
+                    "name": "Fontworks/日文/丸ゴシック体（圆体）/FOT-UDMarugo_SmallPr6N-H.otf",
+                    "language": "ja",
+                    "probability": 0.7734006,
+                    "serif": false
+                  }
+                ],
+                "direction": "vertical",
+                "textColor": [
+                  97,
+                  113,
+                  188
+                ],
+                "strokeColor": [
+                  233,
+                  246,
+                  221
+                ],
+                "fontSizePx": 96.07278,
+                "strokeWidthPx": 7.453909,
+                "lineHeight": 1.0166014,
+                "angleDeg": 2.745477
+              },
+              "sprite": null,
+              "spriteTransform": null,
+              "lockLayoutBox": false
+            }
+          }
+        },
+        "01a1881c-179a-7102-b244-e39f1bc827ea": {
+          "id": "01a1881c-179a-7102-b244-e39f1bc827ea",
+          "transform": {
+            "x": 168.41144,
+            "y": 531.97986,
+            "width": 198.23029,
+            "height": 823.27014,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "text": {
+              "confidence": 0.80926836,
+              "sourceLang": "unknown",
+              "sourceDirection": "vertical",
+              "renderedDirection": null,
+              "linePolygons": null,
+              "rotationDeg": 0.0,
+              "detectedFontSizePx": 198.23029,
+              "detector": "pp-doclayout-v3",
+              "text": "まあ後ろ向かなきゃバレへんって、多分笑",
+              "translation": "まあ後ろ向かなきゃバレへんって、多分笑",
+              "style": null,
+              "fontPrediction": {
+                "topFonts": [
+                  {
+                    "index": 2022,
+                    "score": 0.7936321
+                  }
+                ],
+                "namedFonts": [
+                  {
+                    "index": 2022,
+                    "name": "Fontworks/日文/丸ゴシック体（圆体）/FOT-UDMarugo_SmallPr6-E.otf",
+                    "language": "ja",
+                    "probability": 0.7936321,
+                    "serif": false
+                  }
+                ],
+                "direction": "vertical",
+                "textColor": [
+                  47,
+                  138,
+                  215
+                ],
+                "strokeColor": [
+                  232,
+                  249,
+                  228
+                ],
+                "fontSizePx": 98.20635,
+                "strokeWidthPx": 6.2762756,
+                "lineHeight": 1.0063876,
+                "angleDeg": -2.1987247
+              },
+              "sprite": null,
+              "spriteTransform": null,
+              "lockLayoutBox": false
+            }
+          }
+        },
+        "01a1881c-179a-7102-b244-e3adc972e724": {
+          "id": "01a1881c-179a-7102-b244-e3adc972e724",
+          "transform": {
+            "x": 286.8143,
+            "y": 1328.2893,
+            "width": 94.20569,
+            "height": 151.76074,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "text": {
+              "confidence": 0.7792688,
+              "sourceLang": "unknown",
+              "sourceDirection": "vertical",
+              "renderedDirection": null,
+              "linePolygons": null,
+              "rotationDeg": 0.0,
+              "detectedFontSizePx": 94.20569,
+              "detector": "pp-doclayout-v3",
+              "text": "あんさ鯛燒き200円",
+              "translation": "あんさ鯛燒き200円",
+              "style": null,
+              "fontPrediction": {
+                "topFonts": [
+                  {
+                    "index": 407,
+                    "score": 0.94998586
+                  }
+                ],
+                "namedFonts": [
+                  {
+                    "index": 407,
+                    "name": "DynaFont（华康）/日文/otf/Std/デザイン書体（创意字体）/DFKanTeiRyuStd-W9.otf",
+                    "language": "ja",
+                    "probability": 0.94998586,
+                    "serif": false
+                  }
+                ],
+                "direction": "vertical",
+                "textColor": [
+                  71,
+                  82,
+                  73
+                ],
+                "strokeColor": [
+                  74,
+                  65,
+                  72
+                ],
+                "fontSizePx": 28.291952,
+                "strokeWidthPx": 0.5562097,
+                "lineHeight": 1.3964444,
+                "angleDeg": 4.2349076
+              },
+              "sprite": null,
+              "spriteTransform": null,
+              "lockLayoutBox": false
+            }
+          }
+        },
+        "01a1881c-179a-7102-b244-e3b8f8071afa": {
+          "id": "01a1881c-179a-7102-b244-e3b8f8071afa",
+          "transform": {
+            "x": 1096.0,
+            "y": 1565.0,
+            "width": 147.0,
+            "height": 105.0,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "text": {
+              "confidence": 0.7890165,
+              "sourceLang": "unknown",
+              "sourceDirection": "horizontal",
+              "renderedDirection": null,
+              "linePolygons": null,
+              "rotationDeg": 0.0,
+              "detectedFontSizePx": 101.6604,
+              "detector": "pp-doclayout-v3",
+              "text": "ソフトクリーム\nパニラ・抹茶・ふずき\n¥350",
+              "translation": "ソフトクリーム\nパニラ・抹茶・ふずき\n¥350",
+              "style": null,
+              "fontPrediction": {
+                "topFonts": [
+                  {
+                    "index": 5646,
+                    "score": 0.34574273
+                  }
+                ],
+                "namedFonts": [
+                  {
+                    "index": 5646,
+                    "name": "其他/日文/S2G Moon font-PRO.ttf",
+                    "language": "ja",
+                    "probability": 0.34574273,
+                    "serif": false
+                  }
+                ],
+                "direction": "horizontal",
+                "textColor": [
+                  0,
+                  0,
+                  0
+                ],
+                "strokeColor": [
+                  0,
+                  0,
+                  0
+                ],
+                "fontSizePx": 21.742342,
+                "strokeWidthPx": 0.0,
+                "lineHeight": 1.1301563,
+                "angleDeg": -7.18979
+              },
+              "sprite": null,
+              "spriteTransform": null,
+              "lockLayoutBox": false
+            }
+          }
+        },
+        "01a1881c-179a-7102-b244-e3cb12415f8b": {
+          "id": "01a1881c-179a-7102-b244-e3cb12415f8b",
+          "transform": {
+            "x": 1487.0,
+            "y": 1607.0,
+            "width": 133.0,
+            "height": 104.0,
+            "rotationDeg": 0.0
+          },
+          "visible": true,
+          "kind": {
+            "text": {
+              "confidence": 0.7549183,
+              "sourceLang": "unknown",
+              "sourceDirection": "horizontal",
+              "renderedDirection": null,
+              "linePolygons": null,
+              "rotationDeg": 0.0,
+              "detectedFontSizePx": 101.98193,
+              "detector": "pp-doclayout-v3",
+              "text": "三色团子\n¥190",
+              "translation": "三色团子\n¥190",
+              "style": null,
+              "fontPrediction": {
+                "topFonts": [
+                  {
+                    "index": 71,
+                    "score": 0.65422416
+                  }
+                ],
+                "namedFonts": [
+                  {
+                    "index": 71,
+                    "name": "Arphic（文鼎）/日文/Arphic Marker-Tai Extra JIS - Arphic PMarker-Tai Extra JIS.ttc",
+                    "language": "ja",
+                    "probability": 0.65422416,
+                    "serif": false
+                  }
+                ],
+                "direction": "horizontal",
+                "textColor": [
+                  0,
+                  0,
+                  0
+                ],
+                "strokeColor": [
+                  0,
+                  0,
+                  0
+                ],
+                "fontSizePx": 39.789124,
+                "strokeWidthPx": 0.0,
+                "lineHeight": 1.5669755,
+                "angleDeg": -8.345768
+              },
+              "sprite": null,
+              "spriteTransform": null,
+              "lockLayoutBox": false
+            }
+          }
+        },
+        "01a1881c-4a26-7251-b658-8ab80d54205f": {
+          "id": "01a1881c-4a26-7251-b658-8ab80d54205f",
+          "transform": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.0,
+            "height": 0.0,
+            "rotationDeg": 0.0
+          },
+          "visible": false,
+          "kind": {
+            "mask": {
+              "role": "segment",
+              "blob": "bb069447b4106cd03549e58d10ac8d43030bf87cf4c07ab2e7fcb4ac75d508ec"
+            }
+          }
+        },
+        "01a1881c-ee15-7902-9327-1dce7967c95a": {
+          "id": "01a1881c-ee15-7902-9327-1dce7967c95a",
+          "transform": {
+            "x": 0.0,
+            "y": 0.0,
+            "width": 0.0,
+            "height": 0.0,
+            "rotationDeg": 0.0
+          },
+          "visible": false,
+          "kind": {
+            "image": {
+              "role": "rendered",
+              "blob": "46d11d84d17899445aa7464e715d3a020e8010cf2003a35f8dda0a18ed57413e",
+              "opacity": 1.0,
+              "naturalWidth": 1819,
+              "naturalHeight": 2576,
+              "name": null
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -6,6 +6,7 @@ import { useEffect, type ReactNode } from 'react'
 import { I18nextProvider } from 'react-i18next'
 
 import ClientOnly from '@/components/ClientOnly'
+import { ExportProgress } from '@/components/ExportProgress'
 import { ScreenColorPicker } from '@/components/ScreenColorPicker'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { UpdaterProvider } from '@/components/Updater'
@@ -36,6 +37,7 @@ export function Providers({ children }: { children: ReactNode }) {
               <UpdaterProvider>
                 {children}
                 <ScreenColorPicker />
+                <ExportProgress />
               </UpdaterProvider>
             </TooltipProvider>
           </I18nextProvider>

@@ -626,5 +626,9 @@
       "inconsistent": "Same line, different translation",
       "untranslated": "Not translated"
     }
+  },
+  "export": {
+    "progress": "Exporting page {{done}} / {{total}}",
+    "cancel": "Cancel"
   }
 }

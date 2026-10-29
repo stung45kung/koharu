@@ -3,6 +3,8 @@
 import { getGetSceneJsonQueryKey } from '@/lib/api/default/default'
 import type { SceneSnapshot } from '@/lib/api/schemas'
 import { openImageFiles, openImageFolder, openKhrFile } from '@/lib/io/openFiles'
+import { isTauri } from '@/lib/backend'
+import { useExportProgressStore } from '@/lib/io/exportProgress'
 import { saveBlob } from '@/lib/io/saveBlob'
 import { exportProject, uploadKhrArchive, uploadPages, uploadPagesByPaths } from '@/lib/io/scene'
 import { queryClient } from '@/lib/queryClient'
@@ -69,6 +71,13 @@ export async function exportCurrentProjectAs(
   format: 'khr' | 'psd' | 'rendered' | 'inpainted',
   pages?: string[],
 ): Promise<void> {
+  // Several pages on the desktop: one request per page, written straight
+  // into a folder chosen first. Building every page into one zip in memory
+  // took minutes (or never finished) for long projects.
+  if (isTauri() && format !== 'khr' && (pages === undefined || pages.length > 1)) {
+    await exportPagesToFolder(format, pages)
+    return
+  }
   try {
     const defaultFont = usePreferencesStore.getState().defaultFont
     const { blob, filename } = await exportProject({ format, pages, defaultFont })
@@ -81,5 +90,57 @@ export async function exportCurrentProjectAs(
   } catch (err) {
     console.error('Export failed:', err)
     throw err
+  }
+}
+
+const pageFileExtension: Record<'psd' | 'rendered' | 'inpainted', string> = {
+  psd: 'psd',
+  rendered: 'png',
+  inpainted: 'png',
+}
+
+/**
+ * Export pages one at a time into a folder picked up front, showing
+ * progress (with Cancel). Files are named `001-<page name>.<ext>` in page
+ * order; pages without the requested layer are skipped.
+ */
+async function exportPagesToFolder(
+  format: 'psd' | 'rendered' | 'inpainted',
+  pages?: string[],
+): Promise<void> {
+  const snap = queryClient.getQueryData<SceneSnapshot>(getGetSceneJsonQueryKey())
+  const allPages = snap?.scene.pages ?? {}
+  const ids = pages ?? Object.keys(allPages)
+  if (ids.length === 0) return
+
+  const { open } = await import('@tauri-apps/plugin-dialog')
+  const { writeFile } = await import('@tauri-apps/plugin-fs')
+  const folder = await open({ directory: true, multiple: false })
+  if (!folder || typeof folder !== 'string') return
+
+  const progress = useExportProgressStore.getState()
+  progress.start(ids.length)
+  const defaultFont = usePreferencesStore.getState().defaultFont
+  const width = Math.max(3, String(ids.length).length)
+  try {
+    for (const [i, id] of ids.entries()) {
+      if (useExportProgressStore.getState().cancelled) break
+      const stem = sanitiseBaseName(allPages[id]?.name?.replace(/\.[^.]+$/, ''))
+      const name = `${String(i + 1).padStart(width, '0')}-${stem}.${pageFileExtension[format]}`
+      try {
+        const { blob } = await exportProject({ format, pages: [id], defaultFont })
+        await writeFile(`${folder}/${name}`, new Uint8Array(await blob.arrayBuffer()))
+      } catch (err) {
+        // A page without the layer (e.g. not rendered yet) is skipped.
+        if (format === 'psd') throw err
+        console.warn(`Export of page ${i + 1} skipped:`, err)
+      }
+      useExportProgressStore.getState().step()
+    }
+  } catch (err) {
+    console.error('Export failed:', err)
+    throw err
+  } finally {
+    useExportProgressStore.getState().finish()
   }
 }

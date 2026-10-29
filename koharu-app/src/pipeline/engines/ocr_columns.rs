@@ -97,18 +97,30 @@ pub fn ocr_crops(
         return whole();
     };
     let (w, h) = ink.dimensions();
-    columns
+    // Padding never reaches past the middle of the gap to a neighbouring
+    // column, so no edge of a neighbour's glyph ends up in the crop (a
+    // model would read it as an extra character).
+    let crops: Vec<DynamicImage> = columns
         .iter()
-        .rev()
-        .map(|c| {
+        .enumerate()
+        .map(|(i, c)| {
             let pad = ((c.x2 - c.x1) as f32 * 0.2).ceil().max(2.0) as u32;
-            let x1 = c.x1.saturating_sub(pad);
+            let left_limit = i
+                .checked_sub(1)
+                .map(|j| columns[j].x2 + (c.x1 - columns[j].x2) / 2)
+                .unwrap_or(0);
+            let right_limit = columns
+                .get(i + 1)
+                .map(|n| c.x2 + (n.x1 - c.x2).div_ceil(2))
+                .unwrap_or(w);
+            let x1 = c.x1.saturating_sub(pad).max(left_limit);
             let y1 = c.top.saturating_sub(pad);
-            let x2 = (c.x2 + pad).min(w);
+            let x2 = (c.x2 + pad).min(w).min(right_limit);
             let y2 = (c.bottom + pad).min(h);
             image.crop_imm(x1, y1, x2 - x1, y2 - y1)
         })
-        .collect()
+        .collect();
+    crops.into_iter().rev().collect()
 }
 
 fn colour_distance(a: [u8; 3], b: [u8; 3]) -> u32 {
@@ -444,5 +456,25 @@ mod tests {
             &block(10.0, 10.0, 90.0, 200.0),
         );
         assert_eq!(crops.len(), 2);
+    }
+
+    #[test]
+    fn padding_stops_halfway_to_the_next_column() {
+        let mut mask = GrayImage::new(200, 300);
+        glyph_column(&mut mask, 20, 20, 30, 5);
+        glyph_column(&mut mask, 54, 20, 30, 5);
+        let image = DynamicImage::ImageRgb8(RgbImage::new(200, 300));
+        let crops = ocr_crops(
+            &image,
+            &rgb(&image),
+            Some(&mask),
+            None,
+            &block(10.0, 10.0, 90.0, 200.0),
+        );
+        assert_eq!(crops.len(), 2);
+        // Gap 50..54: the left column's crop ends at 52, the right one's
+        // starts there; each is 30 px of glyph + 2 px of gap + 6 px pad.
+        assert_eq!(crops[0].width(), 2 + 30 + 6);
+        assert_eq!(crops[1].width(), 6 + 30 + 2);
     }
 }

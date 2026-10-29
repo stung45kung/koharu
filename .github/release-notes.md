@@ -21,6 +21,8 @@ show a SmartScreen warning because the installer is not code-signed: click
   its block (or spread over its bubble, switchable), rotation handle,
   Reset style.
 - Check panel (glossary misses, inconsistent lines, untranslated blocks).
+- Colour pickers: "Pick" takes a colour from the page (the system eyedropper
+  does not work in the app).
 - Import pages from PDF / ZIP / CBZ / RAR / CBR (pages with a colour
   profile such as Apple RGB are converted to sRGB, so renders keep the
   original colours; pages of older projects too, after re-running inpaint

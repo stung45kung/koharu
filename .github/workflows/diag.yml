@@ -1,0 +1,17 @@
+# TEMPORARY: surface vitest failures. Remove before merging.
+name: Diag
+on:
+  push:
+    branches: ['feature/character-speakers']
+permissions:
+  contents: read
+jobs:
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: |
+          cd ui
+          bunx vitest run --reporter=github-actions --reporter=dot 2>&1 | tail -5 || true

@@ -28,6 +28,13 @@ show a SmartScreen warning because the installer is not code-signed: click
   original colours; pages of older projects too, after re-running inpaint
   and render); export PSD for all or selected pages (rotation kept);
   delete several blocks at once.
+- OCR: vertical blocks are read column by column (columns found from the
+  lettering's colour, even with thick outlines), crops are shrunk to the
+  size the models read best (fixes PaddleOCR-VL reading across columns on
+  high-resolution pages), detected boxes that cut off text are grown, and
+  Manga OCR resizes crops properly. New "LLM Vision OCR" choices read with
+  the loaded LLM (e.g. Gemma in LM Studio with its vision file): column by
+  column, whole block, or the whole page with numbered boxes.
 - Local LLMs (LM Studio etc.): replies are length-limited and runaway
   repeated sounds are cut, so a model looping on moans no longer runs on.
 - Undo / redo also covers character and speaker edits.

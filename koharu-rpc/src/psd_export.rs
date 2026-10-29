@@ -217,11 +217,33 @@ pub fn png_bytes_for_page(
         return Ok(None);
     };
     let image = session.blobs.load_image(&blob_ref)?;
+    Ok(Some(encode_srgb_png(&image)?))
+}
+
+/// PNG with the sRGB profile embedded, so Photoshop and other
+/// colour-managed apps show the original colours whatever their working
+/// space.
+pub fn encode_srgb_png(image: &DynamicImage) -> Result<Vec<u8>> {
+    use image::ImageEncoder as _;
     let mut buf: Vec<u8> = Vec::new();
-    image
-        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+    let mut encoder = image::codecs::png::PngEncoder::new(&mut buf);
+    encoder
+        .set_icc_profile(koharu_psd::SRGB_ICC.to_vec())
         .map_err(anyhow::Error::new)?;
-    Ok(Some(buf))
+    let image = match image {
+        DynamicImage::ImageRgb8(_) | DynamicImage::ImageRgba8(_) => image.clone(),
+        other if other.color().has_alpha() => DynamicImage::ImageRgba8(other.to_rgba8()),
+        other => DynamicImage::ImageRgb8(other.to_rgb8()),
+    };
+    encoder
+        .write_image(
+            image.as_bytes(),
+            image.width(),
+            image.height(),
+            image.color().into(),
+        )
+        .map_err(anyhow::Error::new)?;
+    Ok(buf)
 }
 
 /// Fill the editable text's size / bold / italic / alignment from the

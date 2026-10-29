@@ -95,7 +95,9 @@ pub fn write_document<W: Write>(
     let mut psd = PsdWriter::new();
     write_header(&mut psd, width, height);
     psd.write_u32(0);
-    psd.write_u32(0);
+    let resources = image_resources();
+    psd.write_u32(resources.len() as u32);
+    psd.write_bytes(&resources);
 
     let layer_mask_info = build_layer_and_mask_info(&layers)?;
     psd.write_u32(layer_mask_info.len() as u32);
@@ -105,6 +107,24 @@ pub fn write_document<W: Write>(
 
     writer.write_all(&psd.into_inner())?;
     Ok(())
+}
+
+/// The sRGB colour profile embedded in exports. Koharu's pixels are sRGB;
+/// without a profile Photoshop shows a document in its RGB working space
+/// (e.g. Adobe RGB), so the page — and anything pasted into it — would look
+/// more saturated / darker than the original.
+pub const SRGB_ICC: &[u8] = include_bytes!("srgb.icc");
+
+/// Image resources section: the ICC profile (resource 1039).
+fn image_resources() -> Vec<u8> {
+    let mut res = PsdWriter::new();
+    res.write_signature("8BIM");
+    res.write_u16(1039);
+    res.write_pascal_string("", 2);
+    res.write_u32(SRGB_ICC.len() as u32);
+    res.write_bytes(SRGB_ICC);
+    res.pad_to_multiple(2);
+    res.into_inner()
 }
 
 fn document_dimensions(document: &PsdDocument) -> Result<(u32, u32), PsdExportError> {
@@ -956,5 +976,22 @@ mod tests {
         // The count is written as i16.
         // "Original Image" exists. Count should be -1.
         assert!(bytes.windows(2).any(|w| w == (-1i16).to_be_bytes()));
+    }
+}
+
+#[cfg(test)]
+mod icc_tests {
+    use super::*;
+
+    #[test]
+    fn image_resources_carry_the_srgb_profile() {
+        let res = image_resources();
+        assert_eq!(&res[0..4], b"8BIM");
+        assert_eq!(u16::from_be_bytes([res[4], res[5]]), 1039);
+        assert_eq!(&res[6..8], &[0, 0]);
+        let len = u32::from_be_bytes(res[8..12].try_into().unwrap()) as usize;
+        assert_eq!(&res[12..12 + len], SRGB_ICC);
+        assert_eq!(&SRGB_ICC[36..40], b"acsp");
+        assert!(res.len().is_multiple_of(2));
     }
 }

@@ -1,13 +1,12 @@
-//! Split vertical text blocks into columns (and long columns into
-//! chunks) before OCR.
+//! Split vertical text blocks into columns before OCR.
 //!
 //! OCR models handed a whole multi-column vertical block tend to drop a
 //! column or read straight across the columns (e.g. "へへ…/似合ってるでぇ/
-//! 嬢ちゃん" came back as "嬢似へちゃんてるでえ"), and Manga OCR squeezes
-//! every crop into 224×224, so a long column's glyphs end up too small to
-//! read. The page's text segmentation mask shows where the strokes are: a
-//! block is cut at the gaps between its columns, long columns at the gaps
-//! between glyphs, and the pieces are read right to left, top to bottom.
+//! 嬢ちゃん" came back as "嬢似へちゃんてるでえ"). The page's text
+//! segmentation mask (narrowed to the lettering's fill colour) shows where
+//! the strokes are: a block is cut at the gaps between its columns and the
+//! columns are read right to left. (Cutting long columns into chunks was
+//! tried and read worse.)
 
 use image::{DynamicImage, GrayImage, Luma, RgbImage};
 use koharu_ml::comic_text_detector::crop_text_block_bbox;
@@ -20,11 +19,11 @@ const INK: u8 = 128;
 const MIN_COLUMN_SHARE: f32 = 0.45;
 /// Gaps narrower than this share of the widest column belong to the column
 /// (strokes of one glyph can leave thin empty stripes).
-const MIN_GAP_SHARE: f32 = 0.12;
-/// A column taller than this many column widths is read in chunks...
-const MAX_COLUMN_RATIO: f32 = 6.5;
-/// ...of about this many widths (roughly that many glyphs) each.
-const CHUNK_RATIO: f32 = 5.0;
+const MIN_GAP_SHARE: f32 = 0.05;
+/// A pixel column is part of a text column when it holds at least this
+/// share of the typical ink per pixel column; the faint ink between two
+/// close columns (stray outline or dots) stays below it.
+const MIN_INK_SHARE: f32 = 0.15;
 
 /// Ink box of one column, unpadded: `x1..x2`, `top..bottom` (exclusive).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -44,8 +43,8 @@ pub struct TextColors {
 }
 
 /// Crops to OCR for `block`, in reading order: for a vertical block, its
-/// columns right to left, long ones cut into chunks; otherwise (or when
-/// no columns can be told apart) the whole block.
+/// columns right to left; otherwise (or when no columns can be told
+/// apart) the whole block.
 ///
 /// Columns are found in an ink map: pixels of the segmentation `mask`
 /// that also have the lettering's fill colour. Outlined lettering fills
@@ -67,8 +66,7 @@ pub fn ocr_crops(
     if !vertical || block.rotation_deg.is_some_and(|r| r.abs() > 3.0) {
         return whole();
     }
-    let long = |c: &Column| (c.bottom - c.top) as f32 > (c.x2 - c.x1) as f32 * MAX_COLUMN_RATIO;
-    let usable = |columns: &[Column]| columns.len() >= 2 || columns.first().is_some_and(long);
+    let usable = |columns: &[Column]| columns.len() >= 2;
 
     let mut found = None;
     for ink in [
@@ -93,8 +91,8 @@ pub fn ocr_crops(
             break;
         }
     }
-    // A single short column: the whole block is as good and safer if the
-    // ink map missed a stroke.
+    // A single column: the whole block is as good and safer if the ink map
+    // missed a stroke.
     let Some((ink, columns)) = found else {
         return whole();
     };
@@ -102,7 +100,6 @@ pub fn ocr_crops(
     columns
         .iter()
         .rev()
-        .flat_map(|c| chunk_column(&ink, *c))
         .map(|c| {
             let pad = ((c.x2 - c.x1) as f32 * 0.2).ceil().max(2.0) as u32;
             let x1 = c.x1.saturating_sub(pad);
@@ -185,10 +182,19 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
     let sx1 = (block.x - margin).max(0.0).floor() as u32;
     let sx2 = ((block.x + block.width + margin).ceil().max(0.0) as u32).min(w);
 
-    let min_ink = ((by2 - by1) as f32 * 0.01).max(1.0) as u32;
-    let ink_in_column: Vec<bool> = (sx1..sx2)
-        .map(|x| (by1..by2).filter(|&y| inked(mask, x, y)).count() as u32 >= min_ink)
+    let counts: Vec<u32> = (sx1..sx2)
+        .map(|x| (by1..by2).filter(|&y| inked(mask, x, y)).count() as u32)
         .collect();
+    let mut nonzero: Vec<u32> = counts.iter().copied().filter(|&c| c > 0).collect();
+    if nonzero.is_empty() {
+        return Vec::new();
+    }
+    nonzero.sort_unstable();
+    let typical = nonzero[nonzero.len() / 2] as f32;
+    let min_ink = ((by2 - by1) as f32 * 0.01)
+        .max(typical * MIN_INK_SHARE)
+        .max(1.0);
+    let ink_in_column: Vec<bool> = counts.iter().map(|&c| c as f32 >= min_ink).collect();
 
     // Runs of inked pixel columns that reach into the block.
     let mut runs: Vec<(u32, u32)> = Vec::new();
@@ -262,40 +268,6 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
                 top,
                 bottom,
             })
-        })
-        .collect()
-}
-
-/// A long column cut at the emptiest rows near evenly spaced points, so
-/// glyphs are not split; a short column as is.
-fn chunk_column(mask: &GrayImage, c: Column) -> Vec<Column> {
-    let width = (c.x2 - c.x1).max(1) as f32;
-    let height = (c.bottom - c.top) as f32;
-    if height <= width * MAX_COLUMN_RATIO {
-        return vec![c];
-    }
-    let pieces = (height / (width * CHUNK_RATIO)).ceil() as u32;
-    let row_ink = |y: u32| (c.x1..c.x2).filter(|&x| inked(mask, x, y)).count();
-    let window = (width * 0.6).ceil() as u32;
-    let mut cuts = Vec::with_capacity(pieces as usize + 1);
-    cuts.push(c.top);
-    for k in 1..pieces {
-        let target = c.top + ((c.bottom - c.top) * k) / pieces;
-        let lo = target.saturating_sub(window).max(*cuts.last().unwrap() + 1);
-        let hi = (target + window).min(c.bottom - 1);
-        // Emptiest row, nearest the target on ties.
-        let cut = (lo..=hi)
-            .min_by_key(|&y| (row_ink(y), y.abs_diff(target)))
-            .unwrap_or(target);
-        cuts.push(cut);
-    }
-    cuts.push(c.bottom);
-    cuts.windows(2)
-        .filter(|pair| pair[1] > pair[0])
-        .map(|pair| Column {
-            top: pair[0],
-            bottom: pair[1],
-            ..c
         })
         .collect()
 }
@@ -379,31 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn long_columns_are_cut_between_glyphs() {
-        let image = DynamicImage::ImageRgb8(RgbImage::new(100, 600));
-        let mut mask = GrayImage::new(100, 600);
-        // 14 glyphs of 30 px: 14 * 34 = 476 px tall, ratio ~16.
-        glyph_column(&mut mask, 30, 20, 30, 14);
-        let crops = ocr_crops(
-            &image,
-            &rgb(&image),
-            Some(&mask),
-            None,
-            &block(20.0, 10.0, 50.0, 500.0),
-        );
-        assert_eq!(crops.len(), 4);
-        let column = vertical_columns(&mask, &block(20.0, 10.0, 50.0, 500.0))[0];
-        for piece in chunk_column(&mask, column).windows(2) {
-            let cut = piece[1].top;
-            // Every cut falls in a gap between glyphs.
-            assert!((0..14).all(|g| {
-                let y = 20 + g * 34;
-                cut < y || cut >= y + 30
-            }));
-        }
-    }
-
-    #[test]
     fn furigana_short_single_columns_and_horizontal_blocks_stay_whole() {
         let image = DynamicImage::ImageRgb8(RgbImage::new(200, 300));
         let mut mask = GrayImage::new(200, 300);
@@ -479,5 +426,23 @@ mod tests {
         let crops = ocr_crops(&image, &rgb(&image), Some(&mask), Some(colors), &b);
         assert_eq!(crops.len(), 2);
         assert!(crops[0].height() < crops[1].height()); // right column first
+    }
+
+    #[test]
+    fn faint_ink_between_close_columns_does_not_join_them() {
+        let image = DynamicImage::ImageRgb8(RgbImage::new(200, 300));
+        let mut mask = GrayImage::new(200, 300);
+        glyph_column(&mut mask, 20, 20, 30, 5);
+        glyph_column(&mut mask, 52, 20, 30, 5);
+        // A few stray pixels in the 2 px gap between the columns.
+        paint(&mut mask, 50..52, 40..45);
+        let crops = ocr_crops(
+            &image,
+            &rgb(&image),
+            Some(&mask),
+            None,
+            &block(10.0, 10.0, 90.0, 200.0),
+        );
+        assert_eq!(crops.len(), 2);
     }
 }

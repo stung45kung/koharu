@@ -11,6 +11,7 @@ pub mod comic_text_bubble;
 pub mod ctd_full;
 pub mod ctd_segment;
 pub mod flux2_klein;
+pub mod grow_boxes;
 pub mod lama;
 pub mod llm_translate;
 pub mod manga_ocr;

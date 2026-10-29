@@ -155,8 +155,10 @@ fn colour_ink(
 ) -> Option<GrayImage> {
     // Fill and outline need to differ clearly to separate them.
     const MIN_CONTRAST: u32 = 60 * 60;
-    // Without an outline: pixels this close to the fill colour.
-    const MAX_FILL_DISTANCE: u32 = 90 * 90;
+    // Pixels this close to the predicted fill colour (the prediction is
+    // often some way off; the dark scene showing between outlined columns
+    // inside the mask is further).
+    const MAX_FILL_DISTANCE: u32 = 85 * 85;
     let outline = colors
         .outline
         .filter(|o| colour_distance(*o, colors.fill) >= MIN_CONTRAST);
@@ -175,10 +177,8 @@ fn colour_ink(
             }
             let px = rgb.get_pixel(x, y).0;
             let to_fill = colour_distance(px, colors.fill);
-            let is_fill = match outline {
-                Some(o) => to_fill < colour_distance(px, o),
-                None => to_fill <= MAX_FILL_DISTANCE,
-            };
+            let is_fill = to_fill <= MAX_FILL_DISTANCE
+                && outline.is_none_or(|o| to_fill < colour_distance(px, o));
             if is_fill {
                 ink.put_pixel(x, y, Luma([255]));
                 any = true;

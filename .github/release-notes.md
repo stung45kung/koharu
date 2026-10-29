@@ -35,6 +35,8 @@ show a SmartScreen warning because the installer is not code-signed: click
   Manga OCR resizes crops properly. New "LLM Vision OCR" choices read with
   the loaded LLM (e.g. Gemma in LM Studio with its vision file): column by
   column, whole block, or the whole page with numbered boxes.
+- OCR one block again (button on each block, or right-click "OCR this
+  block" on the canvas) after moving or resizing it.
 - Local LLMs (LM Studio etc.): replies are length-limited and runaway
   repeated sounds are cut, so a model looping on moans no longer runs on.
 - Undo / redo also covers character and speaker edits.

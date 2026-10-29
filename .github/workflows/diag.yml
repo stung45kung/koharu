@@ -30,6 +30,6 @@ jobs:
         run: |
           for f in crops/*.png; do
             ./target/release/paddleocr-vl-llm --cpu --model-dir paddle --max-new-tokens 256 --input "$f" > raw.txt 2>err.txt
-            out=$(awk '/^== /{on=1; next} on' raw.txt | grep -v $'\x1b' | tr -d '\n')
-            if [ -z "$out" ]; then echo "::notice title=ERR $f::$(tail -c 600 err.txt | tr '\n' ' ')"; else echo "::notice title=$f::$out"; fi
+            out=$(sed 's/\x1b\[[0-9;]*m//g' raw.txt | grep -v ' INFO \| DEBUG \| WARN ' | tr '\n' '|' | tail -c 400)
+            echo "::notice title=$f::$out"
           done

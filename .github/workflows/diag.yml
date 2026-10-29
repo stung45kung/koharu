@@ -1,0 +1,33 @@
+# TEMPORARY: PaddleOCR-VL benchmark. Remove before merging.
+name: Diag
+on:
+  push:
+    branches: ['feature/character-speakers']
+permissions:
+  contents: read
+jobs:
+  ocr:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install numpy pillow huggingface_hub
+      - run: |
+          gh release download -R ggml-org/llama.cpp --pattern '*bin-ubuntu-x64.zip' -O llama.zip
+          unzip -q llama.zip -d llama_raw
+          mkdir llama && cp -r llama_raw/*/* llama/ 2>/dev/null || cp -r llama_raw/* llama/
+          ls llama | head -50
+      - run: |
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          import shutil
+          shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", "PaddleOCR-VL-1.6-GGUF.gguf"), "m.gguf")
+          shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", "PaddleOCR-VL-1.6-GGUF-mmproj.gguf"), "mm.gguf")
+          PY
+      - run: |
+          ./llama/llama-mtmd-cli -m m.gguf --mmproj mm.gguf --image .github/diag/t2.png -p "OCR:" --temp 0 -n 256 2>&1 | tail -5
+      - run: python .github/diag/paddle_bench.py

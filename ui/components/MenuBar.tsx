@@ -24,7 +24,13 @@ import { useScene } from '@/hooks/useScene'
 import { getConfig, startPipeline } from '@/lib/api/default/default'
 import { isTauri, openExternalUrl } from '@/lib/backend'
 import { exportCurrentProjectAs, importPages } from '@/lib/io/pagesIo'
-import { closeProject, redoOp, selectAllTextNodesOnCurrentPage, undoOp } from '@/lib/io/scene'
+import {
+  clearSelectionOnCurrentPage,
+  closeProject,
+  redoOp,
+  selectAllTextNodesOnCurrentPage,
+  undoOp,
+} from '@/lib/io/scene'
 import { formatShortcutForDisplay, getPlatform } from '@/lib/shortcutUtils'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
@@ -62,12 +68,23 @@ type MenuSection = {
   triggerTestId?: string
 }
 
+/** Engine id of the LLM speaker-guessing step (koharu-app `speaker-guess`). */
+const SPEAKER_GUESS_STEP = 'speaker-guess'
+
 export function MenuBar() {
   const { t } = useTranslation()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [settingsTab, setSettingsTab] = useState<TabId>('appearance')
   const hasPage = useSelectionStore((s) => s.pageId !== null)
-  const hasScene = useScene().scene !== null
+  const { scene } = useScene()
+  const hasScene = scene !== null
+  const selectedPageIds = useSelectionStore((s) => s.selectedPageIds)
+  // Selected pages in page order: pipelines run pages in the order given,
+  // and translation passes each page's result on as context to the next.
+  const selectedPagesInOrder = useMemo(
+    () => Object.keys(scene?.pages ?? {}).filter((id) => selectedPageIds.has(id)),
+    [scene?.pages, selectedPageIds],
+  )
   const shortcuts = usePreferencesStore((state) => state.shortcuts)
   const customPipeline = usePreferencesStore((state) => state.customPipeline)
   const setCustomPipeline = usePreferencesStore((state) => state.setCustomPipeline)
@@ -83,7 +100,7 @@ export function MenuBar() {
     return id
   }
 
-  const runPipeline = async (opts: { pageId?: string }) => {
+  const runPipeline = async (opts: { pageIds?: string[] }) => {
     const cfg = await getConfig()
     if (!cfg.pipeline) return
     const p = cfg.pipeline
@@ -93,6 +110,8 @@ export function MenuBar() {
       p.bubble_segmenter,
       p.font_detector,
       p.ocr,
+      // Skips itself when the project has no characters or no LLM is loaded.
+      SPEAKER_GUESS_STEP,
       p.translator,
       p.inpainter,
       p.renderer,
@@ -101,7 +120,7 @@ export function MenuBar() {
     const prefs = usePreferencesStore.getState()
     await startPipeline({
       steps,
-      pages: opts.pageId ? [opts.pageId] : undefined,
+      pages: opts.pageIds?.length ? opts.pageIds : undefined,
       targetLanguage: editor.selectedLanguage,
       systemPrompt: prefs.customSystemPrompt,
       defaultFont: prefs.defaultFont,
@@ -115,7 +134,7 @@ export function MenuBar() {
     await startPipeline({ steps: [cfg.pipeline.inpainter], pages: [pageId] })
   }
 
-  const runCustomPipeline = async (opts: { pageId?: string }) => {
+  const runCustomPipeline = async (opts: { pageIds?: string[] }) => {
     const cfg = await getConfig()
     if (!cfg.pipeline) return
     const p = cfg.pipeline
@@ -125,6 +144,7 @@ export function MenuBar() {
         ? [p.detector, p.segmenter, p.bubble_segmenter, p.font_detector]
         : []),
       prefs.customPipeline.ocr ? p.ocr : null,
+      prefs.customPipeline.speakers !== false ? SPEAKER_GUESS_STEP : null,
       prefs.customPipeline.translator ? p.translator : null,
       prefs.customPipeline.inpainter ? p.inpainter : null,
       prefs.customPipeline.renderer ? p.renderer : null,
@@ -132,7 +152,7 @@ export function MenuBar() {
     const editor = useEditorUiStore.getState()
     await startPipeline({
       steps,
-      pages: opts.pageId ? [opts.pageId] : undefined,
+      pages: opts.pageIds?.length ? opts.pageIds : undefined,
       targetLanguage: editor.selectedLanguage,
       systemPrompt: prefs.customSystemPrompt,
       defaultFont: prefs.defaultFont,
@@ -152,6 +172,24 @@ export function MenuBar() {
       onSelect: () => void exportCurrentProjectAs('psd', [requirePageId()]),
       disabled: !hasPage,
       testId: 'menu-file-export-psd',
+    },
+    {
+      label: t('menu.exportAllPsd'),
+      onSelect: () => void exportCurrentProjectAs('psd'),
+      disabled: !hasScene,
+      testId: 'menu-file-export-all-psd',
+    },
+    {
+      label: t('menu.exportSelectedPsd', { count: selectedPagesInOrder.length }),
+      onSelect: () => void exportCurrentProjectAs('psd', selectedPagesInOrder),
+      disabled: selectedPagesInOrder.length < 2,
+      testId: 'menu-file-export-selected-psd',
+    },
+    {
+      label: t('menu.exportSelectedRendered', { count: selectedPagesInOrder.length }),
+      onSelect: () => void exportCurrentProjectAs('rendered', selectedPagesInOrder),
+      disabled: selectedPagesInOrder.length < 2,
+      testId: 'menu-file-export-selected-rendered',
     },
     {
       label: t('menu.exportAllInpainted'),
@@ -287,6 +325,14 @@ export function MenuBar() {
               {t('menu.selectAll')}
               <MenubarShortcut>{isMac ? '⌘A' : 'Ctrl+A'}</MenubarShortcut>
             </MenubarItem>
+            <MenubarItem
+              data-testid='menu-edit-clear-select'
+              className='text-[13px]'
+              disabled={!hasPage}
+              onSelect={() => clearSelectionOnCurrentPage()}
+            >
+              {t('menu.clearSelect')}
+            </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
         <MenubarMenu>
@@ -315,9 +361,17 @@ export function MenuBar() {
               data-testid='menu-process-current'
               className='text-[13px]'
               disabled={!hasPage}
-              onSelect={() => void runPipeline({ pageId: requirePageId() })}
+              onSelect={() => void runPipeline({ pageIds: [requirePageId()] })}
             >
               {t('menu.processCurrent')}
+            </MenubarItem>
+            <MenubarItem
+              data-testid='menu-process-selected'
+              className='text-[13px]'
+              disabled={selectedPagesInOrder.length < 2}
+              onSelect={() => void runPipeline({ pageIds: selectedPagesInOrder })}
+            >
+              {t('menu.processSelected', { count: selectedPagesInOrder.length })}
             </MenubarItem>
             <MenubarItem
               data-testid='menu-process-rerender'
@@ -339,9 +393,17 @@ export function MenuBar() {
             <MenubarItem
               className='text-[13px]'
               disabled={!hasPage || !hasSelectedSteps}
-              onSelect={() => void runCustomPipeline({ pageId: requirePageId() })}
+              onSelect={() => void runCustomPipeline({ pageIds: [requirePageId()] })}
             >
               {t('menu.runCustomCurrent')}
+            </MenubarItem>
+            <MenubarItem
+              data-testid='menu-run-custom-selected'
+              className='text-[13px]'
+              disabled={selectedPagesInOrder.length < 2 || !hasSelectedSteps}
+              onSelect={() => void runCustomPipeline({ pageIds: selectedPagesInOrder })}
+            >
+              {t('menu.runCustomSelected', { count: selectedPagesInOrder.length })}
             </MenubarItem>
             <MenubarItem
               className='text-[13px]'
@@ -370,6 +432,15 @@ export function MenuBar() {
                   onSelect={(e) => e.preventDefault()}
                 >
                   {t('processing.ocr')}
+                </MenubarCheckboxItem>
+                <MenubarCheckboxItem
+                  className='text-[13px]'
+                  data-testid='menu-custom-pipeline-speakers'
+                  checked={customPipeline.speakers !== false}
+                  onCheckedChange={(checked) => setCustomPipeline({ speakers: checked })}
+                  onSelect={(e) => e.preventDefault()}
+                >
+                  {t('characters.guessShort')}
                 </MenubarCheckboxItem>
                 <MenubarCheckboxItem
                   className='text-[13px]'

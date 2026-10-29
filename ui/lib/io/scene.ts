@@ -34,6 +34,7 @@ import { filenameFromContentDisposition } from '@/lib/io/saveBlob'
 import { queryClient } from '@/lib/queryClient'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
 import { useSelectionStore } from '@/lib/stores/selectionStore'
+import { ops } from '@/lib/ops'
 
 /**
  * Imperative action helpers. Every mutation below is a thin wrapper that
@@ -47,6 +48,11 @@ import { useSelectionStore } from '@/lib/stores/selectionStore'
 
 export const invalidateScene = () =>
   queryClient.invalidateQueries({ queryKey: getGetSceneJsonQueryKey() })
+
+// Undo / redo can also revert character & speaker edits (see
+// `ProjectSession::undo`). Literal key to avoid importing `lib/characters`.
+const invalidateCharacters = () =>
+  queryClient.invalidateQueries({ queryKey: ['/api/v1/characters'] })
 
 const invalidateConfig = () => queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() })
 
@@ -72,14 +78,14 @@ export async function applyOp(op: Op): Promise<void> {
 export async function undoOp(): Promise<void> {
   await enqueueHistoryMutation(async () => {
     await undo()
-    await invalidateScene()
+    await Promise.all([invalidateScene(), invalidateCharacters()])
   })
 }
 
 export async function redoOp(): Promise<void> {
   await enqueueHistoryMutation(async () => {
     await redo()
-    await invalidateScene()
+    await Promise.all([invalidateScene(), invalidateCharacters()])
   })
 }
 
@@ -140,6 +146,32 @@ export function selectAllTextNodesOnCurrentPage(): void {
     if (node && 'text' in node.kind) ids.push(id)
   }
   useSelectionStore.getState().selectMany(ids)
+}
+
+/** Deselect everything on the current page. No-op if nothing is selected. */
+export function clearSelectionOnCurrentPage(): void {
+  useSelectionStore.getState().selectMany([])
+}
+
+/**
+ * Remove text nodes from a page as one undo step, clear the selection and
+ * re-render. Ids not on the page are ignored.
+ */
+export async function deleteTextNodes(pageId: string, nodeIds: Iterable<string>): Promise<void> {
+  const snap = queryClient.getQueryData<SceneSnapshot>(getGetSceneJsonQueryKey())
+  const page = snap?.scene?.pages?.[pageId]
+  if (!page) return
+  const order = Object.keys(page.nodes)
+  const batch = [...nodeIds].flatMap((nodeId) => {
+    const node = page.nodes[nodeId]
+    if (!node) return []
+    const idx = order.indexOf(nodeId)
+    return [ops.removeNode(page.id, nodeId, node, idx < 0 ? 0 : idx)]
+  })
+  if (batch.length === 0) return
+  await applyOp(batch.length === 1 ? batch[0] : ops.batch('Delete text blocks', batch))
+  useSelectionStore.getState().clear()
+  queueAutoRender(page.id)
 }
 
 // Project lifecycle ----------------------------------------------------------

@@ -10,7 +10,8 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use koharu_core::{
-    ImageRole, MaskRole, NodeDataPatch, NodePatch, Op, TextDataPatch, TextStyle, Transform,
+    ImageRole, MaskRole, NodeDataPatch, NodePatch, Op, StrokeDefaults, TextDataPatch, TextStyle,
+    Transform,
 };
 use koharu_llm::Language;
 
@@ -47,6 +48,7 @@ impl Engine for Model {
             None => None,
         };
 
+        let page_height = ctx.scene.page(ctx.page).map(|p| p.height).unwrap_or(h);
         // Build renderer input from every text node with a non-empty translation.
         let nodes = text_nodes(ctx.scene, ctx.page);
         let inputs: Vec<RenderBlockInput> = nodes
@@ -56,6 +58,7 @@ impl Engine for Model {
                 if translation.is_empty() {
                     return None;
                 }
+                let speaker = ctx.characters.speaker_of(*id);
                 Some(RenderBlockInput {
                     node_id: *id,
                     transform: **transform,
@@ -65,20 +68,53 @@ impl Engine for Model {
                     source_direction: t.source_direction,
                     rendered_direction: t.rendered_direction,
                     lock_layout_box: t.lock_layout_box,
+                    speaker_font: speaker.and_then(|c| c.font.clone()),
+                    speaker_color: speaker.and_then(|c| c.color),
+                    speaker_font_size: speaker.and_then(|c| {
+                        ctx.typesetting
+                            .scale_size_for_page(c.font_size_px?, page_height)
+                    }),
+                    speaker_effect: speaker.and_then(|c| c.effect()),
+                    speaker_align: speaker.and_then(|c| c.text_align),
+                    default_stroke: layered_stroke(
+                        speaker.and_then(|c| c.stroke.as_ref()),
+                        ctx.typesetting.stroke.as_ref(),
+                        |w| ctx.typesetting.scale_size_for_page(w, page_height),
+                    ),
                 })
             })
             .collect();
 
+        // Project font (from the project file) wins over the app-wide
+        // default font sent by the UI; per-block fonts win over both.
+        let document_font = ctx
+            .scene
+            .project
+            .style
+            .default_font
+            .clone()
+            .filter(|f| !f.trim().is_empty())
+            .or_else(|| ctx.options.default_font.clone());
         let page_opts = PageRenderOptions {
             shader_effect: Default::default(),
             shader_stroke: None,
-            document_font: ctx.options.default_font.clone(),
+            document_font,
             target_language: ctx
                 .options
                 .target_language
                 .as_deref()
                 .map(render_target_language_tag),
             raster: Default::default(),
+            default_font_size: ctx.typesetting.font_size_for_page(page_height),
+            default_font_size_shrinks: ctx.typesetting.shrink_to_fit,
+            default_color: ctx.typesetting.color,
+            thai_word_breaking: if ctx.typesetting.thai_lstm_line_breaking {
+                koharu_renderer::segment::ThaiWordBreaking::Lstm
+            } else {
+                koharu_renderer::segment::ThaiWordBreaking::Dictionary
+            },
+            protected_words: protected_words(&ctx),
+            expand_into_bubble: ctx.typesetting.expand_into_bubble,
         };
 
         // `render_page` is synchronous and CPU-bound. It runs inline on the
@@ -154,6 +190,48 @@ inventory::submit! {
             Ok(Box::new(Model) as Box<dyn Engine>)
         }),
     }
+}
+
+/// Glossary renderings and character names: never split across lines
+/// (dictionary word breaking would cut unknown names into pieces).
+fn protected_words(ctx: &EngineCtx<'_>) -> Vec<String> {
+    let mut words: Vec<String> = ctx
+        .session
+        .glossary()
+        .entries
+        .into_iter()
+        .map(|e| e.target.trim().to_string())
+        .collect();
+    for c in &ctx.characters.characters {
+        words.extend(c.name.split('/').map(|n| n.trim().to_string()));
+    }
+    words.retain(|w| w.chars().count() >= 2 && w.chars().count() <= 40);
+    // Longest first, so a longer name wins over a shorter one inside it.
+    words.sort_by(|a, b| b.len().cmp(&a.len()).then_with(|| a.cmp(b)));
+    words.dedup();
+    words
+}
+
+/// The speaker's outline over the project's, field by field, with the width
+/// scaled to the page. `None` when neither sets one.
+pub(crate) fn layered_stroke(
+    speaker: Option<&StrokeDefaults>,
+    project: Option<&StrokeDefaults>,
+    scale: impl Fn(f32) -> Option<f32>,
+) -> Option<StrokeDefaults> {
+    if speaker.is_none() && project.is_none() {
+        return None;
+    }
+    Some(StrokeDefaults {
+        enabled: speaker.or(project).is_none_or(|s| s.enabled),
+        color: speaker
+            .and_then(|s| s.color)
+            .or_else(|| project.and_then(|p| p.color)),
+        width_px: speaker
+            .and_then(|s| s.width_px)
+            .or_else(|| project.and_then(|p| p.width_px))
+            .and_then(scale),
+    })
 }
 
 fn normalize_transform(t: Transform) -> Transform {

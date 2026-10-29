@@ -10,6 +10,9 @@
 //!   `.khrproj/project.toml`    — TOML-encoded `ProjectMeta`
 //!   `.khrproj/scene.bin`       — postcard-encoded `Snapshot { epoch, scene }`
 //!   `.khrproj/history.log`     — append-only `LogFrame { epoch, op }`
+//!   `.khrproj/characters.toml` — character profiles + speaker map (optional)
+//!   `.khrproj/typesetting.toml` — project default text size (optional)
+//!   `.khrproj/glossary.toml`    — fixed term translations (optional)
 //!   `.khrproj/blobs/ab/cdef…`  — content-addressed blobs
 //!   `.khrproj/.lock`           — fs4 exclusive lock (session lifetime)
 
@@ -22,12 +25,15 @@ use atomicwrites::{AtomicFile, OverwriteBehavior};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::Utc;
 use fs4::FileExt;
-use koharu_core::{Scene, op::Op};
+use koharu_core::{CharacterBook, Glossary, Scene, TypesettingDefaults, op::Op};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 
 use crate::blobs::BlobStore;
+use crate::characters;
+use crate::glossary;
 use crate::history::{self, History};
+use crate::typesetting;
 
 const SCENE_FILE: &str = "scene.bin";
 const LOG_FILE: &str = "history.log";
@@ -49,8 +55,72 @@ pub struct ProjectSession {
     pub scene: RwLock<Scene>,
     pub history: Mutex<History>,
     pub blobs: Arc<BlobStore>,
+    /// Character profiles + text-node speakers, mirrored to `characters.toml`.
+    characters: RwLock<CharacterBook>,
+    /// Project default text size, mirrored to `typesetting.toml`.
+    typesetting: RwLock<TypesettingDefaults>,
+    /// Project glossary, mirrored to `glossary.toml`.
+    glossary: RwLock<Glossary>,
+    /// Interleaving of scene ops and character-book edits, so one Ctrl+Z
+    /// undoes whichever happened last.
+    timeline: Mutex<Timeline>,
     /// Held for the lifetime of the session.
     _lock: File,
+}
+
+/// What a single undo / redo step reverted or re-applied.
+#[derive(Debug, Clone)]
+pub enum UndoStep {
+    /// A scene op (new epoch, the op that was applied).
+    Scene(u64, Box<Op>),
+    /// The character book (speakers / profiles) went back to an earlier
+    /// version — the scene epoch is unchanged.
+    Characters,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StepKind {
+    Scene,
+    Characters,
+}
+
+/// Max character-book versions kept for undo.
+const CHARACTER_UNDO_LIMIT: usize = 200;
+/// Max interleaved steps remembered (the scene history has its own cap).
+const TIMELINE_LIMIT: usize = 2000;
+
+#[derive(Default)]
+struct Timeline {
+    undo: std::collections::VecDeque<StepKind>,
+    redo: Vec<StepKind>,
+    /// Character book *before* each undoable character edit.
+    books_undo: std::collections::VecDeque<CharacterBook>,
+    /// Character book *before* each undone edit was reverted.
+    books_redo: Vec<CharacterBook>,
+}
+
+impl Timeline {
+    fn record(&mut self, kind: StepKind) {
+        self.undo.push_back(kind);
+        while self.undo.len() > TIMELINE_LIMIT {
+            self.undo.pop_front();
+        }
+        // A new action invalidates everything that could be redone.
+        self.redo.clear();
+        self.books_redo.clear();
+    }
+
+    fn record_book(&mut self, before: CharacterBook) {
+        self.books_undo.push_back(before);
+        if self.books_undo.len() > CHARACTER_UNDO_LIMIT {
+            self.books_undo.pop_front();
+            // Keep the step list consistent: forget the oldest book step.
+            if let Some(i) = self.undo.iter().position(|k| *k == StepKind::Characters) {
+                self.undo.remove(i);
+            }
+        }
+        self.record(StepKind::Characters);
+    }
 }
 
 impl ProjectSession {
@@ -111,12 +181,19 @@ impl ProjectSession {
             .with_context(|| format!("replay log {}", log_path))?;
 
         let history_obj = History::open(log_path.as_std_path(), epoch)?;
+        let characters = RwLock::new(characters::load(&dir));
+        let typesetting = RwLock::new(typesetting::load(&dir));
+        let glossary = RwLock::new(glossary::load(&dir));
 
         Ok(Arc::new(Self {
             dir,
             scene: RwLock::new(scene),
             history: Mutex::new(history_obj),
             blobs,
+            characters,
+            typesetting,
+            glossary,
+            timeline: Mutex::new(Timeline::default()),
             _lock: lock,
         }))
     }
@@ -124,22 +201,74 @@ impl ProjectSession {
     // --- scene mutation ----------------------------------------------------
 
     /// Apply an Op. Returns the epoch after apply.
+    // Lock order everywhere: timeline → characters → history → scene.
     pub fn apply(&self, op: Op) -> Result<u64> {
+        let mut timeline = self.timeline.lock();
         let mut history = self.history.lock();
         let mut scene = self.scene.write();
-        history.apply(&mut scene, op)
+        let epoch = history.apply(&mut scene, op)?;
+        timeline.record(StepKind::Scene);
+        Ok(epoch)
     }
 
-    pub fn undo(&self) -> Result<Option<(u64, Op)>> {
-        let mut history = self.history.lock();
-        let mut scene = self.scene.write();
-        history.undo(&mut scene)
+    /// Undo the most recent scene op or character-book edit.
+    pub fn undo(&self) -> Result<Option<UndoStep>> {
+        let mut timeline = self.timeline.lock();
+        match timeline.undo.pop_back() {
+            Some(StepKind::Characters) => {
+                let Some(before) = timeline.books_undo.pop_back() else {
+                    return Ok(None);
+                };
+                let mut guard = self.characters.write();
+                characters::save(&self.dir, &before)?;
+                let current = std::mem::replace(&mut *guard, before);
+                timeline.books_redo.push(current);
+                timeline.redo.push(StepKind::Characters);
+                Ok(Some(UndoStep::Characters))
+            }
+            // `None`: steps from before the timeline cap — let the scene
+            // history decide.
+            kind => {
+                let mut history = self.history.lock();
+                let mut scene = self.scene.write();
+                let out = history.undo(&mut scene)?;
+                if out.is_some() {
+                    timeline.redo.push(StepKind::Scene);
+                } else if let Some(kind) = kind {
+                    // Nothing left to undo; keep the step list as it was.
+                    timeline.undo.push_back(kind);
+                }
+                Ok(out.map(|(e, op)| UndoStep::Scene(e, Box::new(op))))
+            }
+        }
     }
 
-    pub fn redo(&self) -> Result<Option<(u64, Op)>> {
-        let mut history = self.history.lock();
-        let mut scene = self.scene.write();
-        history.redo(&mut scene)
+    /// Redo the most recently undone step.
+    pub fn redo(&self) -> Result<Option<UndoStep>> {
+        let mut timeline = self.timeline.lock();
+        match timeline.redo.pop() {
+            None => Ok(None),
+            Some(StepKind::Characters) => {
+                let Some(after) = timeline.books_redo.pop() else {
+                    return Ok(None);
+                };
+                let mut guard = self.characters.write();
+                characters::save(&self.dir, &after)?;
+                let current = std::mem::replace(&mut *guard, after);
+                timeline.books_undo.push_back(current);
+                timeline.undo.push_back(StepKind::Characters);
+                Ok(Some(UndoStep::Characters))
+            }
+            Some(StepKind::Scene) => {
+                let mut history = self.history.lock();
+                let mut scene = self.scene.write();
+                let out = history.redo(&mut scene)?;
+                if out.is_some() {
+                    timeline.undo.push_back(StepKind::Scene);
+                }
+                Ok(out.map(|(e, op)| UndoStep::Scene(e, Box::new(op))))
+            }
+        }
     }
 
     pub fn epoch(&self) -> u64 {
@@ -149,6 +278,59 @@ impl ProjectSession {
     /// Cheap clone of the scene for read-only consumers (pipeline engines).
     pub fn scene_snapshot(&self) -> Scene {
         self.scene.read().clone()
+    }
+
+    // --- characters ---------------------------------------------------------
+
+    /// Current character book (cheap clone; small).
+    pub fn characters(&self) -> CharacterBook {
+        self.characters.read().clone()
+    }
+
+    /// Mutate the character book and persist it. The in-memory copy only
+    /// changes if both `f` and the disk write succeed.
+    pub fn update_characters<R>(
+        &self,
+        f: impl FnOnce(&mut CharacterBook) -> Result<R>,
+    ) -> Result<(R, CharacterBook)> {
+        let mut timeline = self.timeline.lock();
+        let mut guard = self.characters.write();
+        let mut next = guard.clone();
+        let out = f(&mut next)?;
+        if next != *guard {
+            characters::save(&self.dir, &next)?;
+            let before = std::mem::replace(&mut *guard, next.clone());
+            timeline.record_book(before);
+        }
+        Ok((out, next))
+    }
+
+    // --- typesetting --------------------------------------------------------
+
+    pub fn typesetting(&self) -> TypesettingDefaults {
+        self.typesetting.read().clone()
+    }
+
+    /// Replace the typesetting defaults and persist them.
+    pub fn set_typesetting(&self, defaults: TypesettingDefaults) -> Result<()> {
+        let mut guard = self.typesetting.write();
+        typesetting::save(&self.dir, &defaults)?;
+        *guard = defaults;
+        Ok(())
+    }
+
+    // --- glossary -----------------------------------------------------------
+
+    pub fn glossary(&self) -> Glossary {
+        self.glossary.read().clone()
+    }
+
+    /// Replace the glossary and persist it.
+    pub fn set_glossary(&self, glossary: Glossary) -> Result<()> {
+        let mut guard = self.glossary.write();
+        glossary::save(&self.dir, &glossary)?;
+        *guard = glossary;
+        Ok(())
     }
 
     // --- compaction --------------------------------------------------------
@@ -240,6 +422,84 @@ mod tests {
     }
 
     #[test]
+    fn undo_and_redo_follow_scene_and_character_edits_in_order() {
+        use koharu_core::{Character, CharacterId};
+        let (_tmp, path) = tmp_dir();
+        let session = ProjectSession::create(&path, "undo").unwrap();
+        let narrator = CharacterId::new();
+
+        // 1. scene op, 2. character edit, 3. scene op
+        session
+            .apply(Op::AddPage {
+                page: Page::new("p1", 10, 10),
+                at: 0,
+            })
+            .unwrap();
+        session
+            .update_characters(|book| {
+                book.set_characters(vec![Character {
+                    id: narrator,
+                    name: "N".into(),
+                    ..Default::default()
+                }]);
+                Ok(())
+            })
+            .unwrap();
+        session
+            .apply(Op::AddPage {
+                page: Page::new("p2", 10, 10),
+                at: 1,
+            })
+            .unwrap();
+        let pages = |s: &ProjectSession| s.scene.read().pages.len();
+
+        assert!(matches!(session.undo().unwrap(), Some(UndoStep::Scene(..))));
+        assert_eq!(pages(&session), 1);
+        assert_eq!(session.characters().characters.len(), 1);
+
+        assert!(matches!(
+            session.undo().unwrap(),
+            Some(UndoStep::Characters)
+        ));
+        assert!(session.characters().characters.is_empty());
+        assert_eq!(pages(&session), 1);
+        // Undo reached the file too.
+        assert!(characters::load(&session.dir).characters.is_empty());
+
+        assert!(matches!(session.undo().unwrap(), Some(UndoStep::Scene(..))));
+        assert_eq!(pages(&session), 0);
+        assert!(session.undo().unwrap().is_none());
+
+        assert!(matches!(session.redo().unwrap(), Some(UndoStep::Scene(..))));
+        assert!(matches!(
+            session.redo().unwrap(),
+            Some(UndoStep::Characters)
+        ));
+        assert_eq!(session.characters().characters.len(), 1);
+        assert!(matches!(session.redo().unwrap(), Some(UndoStep::Scene(..))));
+        assert_eq!(pages(&session), 2);
+        assert!(session.redo().unwrap().is_none());
+
+        // A new edit clears redo.
+        session.undo().unwrap();
+        session
+            .update_characters(|book| {
+                book.set_characters(Vec::new());
+                Ok(())
+            })
+            .unwrap();
+        assert!(session.redo().unwrap().is_none());
+    }
+
+    #[test]
+    fn unchanged_character_book_is_not_an_undo_step() {
+        let (_tmp, path) = tmp_dir();
+        let session = ProjectSession::create(&path, "noop").unwrap();
+        session.update_characters(|_| Ok(())).unwrap();
+        assert!(session.undo().unwrap().is_none());
+    }
+
+    #[test]
     fn create_apply_close_reopen_preserves_scene() {
         let (_tmp, path) = tmp_dir();
         let page_id: PageId;
@@ -320,6 +580,48 @@ mod tests {
             .expect("effect");
         assert!(effect.italic);
         assert!(effect.bold);
+    }
+
+    #[test]
+    fn characters_persist_across_reopen() {
+        use koharu_core::{Character, CharacterId};
+
+        let (_tmp, path) = tmp_dir();
+        let node = NodeId::new();
+        let id = CharacterId::new();
+        {
+            let session = ProjectSession::create(&path, "chars").unwrap();
+            assert!(session.characters().is_empty());
+            session
+                .update_characters(|book| {
+                    book.set_characters(vec![Character {
+                        id,
+                        name: "ผู้บรรยาย".into(),
+                        description: String::new(),
+                        ..Default::default()
+                    }]);
+                    book.assign(&[node], Some(id))?;
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let session = ProjectSession::open(&path).unwrap();
+        let book = session.characters();
+        assert_eq!(book.speaker_of(node).map(|c| c.id), Some(id));
+    }
+
+    #[test]
+    fn failed_character_update_leaves_book_unchanged() {
+        let (_tmp, path) = tmp_dir();
+        let session = ProjectSession::create(&path, "chars").unwrap();
+        let bogus = koharu_core::CharacterId::new();
+        let err = session.update_characters(|book| {
+            book.assign(&[NodeId::new()], Some(bogus))?;
+            Ok(())
+        });
+        assert!(err.is_err());
+        assert!(session.characters().is_empty());
+        assert!(!path.join(characters::CHARACTERS_FILE).exists());
     }
 
     #[test]

@@ -14,7 +14,7 @@ use crate::shape::shape_script_runs;
 use crate::text::script::shaping_direction_for_text;
 use crate::types::TextAlign;
 
-pub use crate::segment::{LineBreakOpportunity, LineBreaker, LineSegment};
+pub use crate::segment::{LineBreakOpportunity, LineBreaker, LineSegment, ThaiWordBreaking};
 pub use crate::segment::{LineBreakSuffix, hyphenation_lang_from_tag};
 pub use crate::shape::{PositionedGlyph, ShapedRun, ShapingOptions, TextShaper};
 
@@ -106,6 +106,8 @@ pub struct TextLayout<'a> {
     max_width: Option<f32>,
     max_height: Option<f32>,
     alignment: Option<TextAlign>,
+    thai_word_breaking: ThaiWordBreaking,
+    protected_words: &'a [String],
 }
 
 impl<'a> TextLayout<'a> {
@@ -120,7 +122,21 @@ impl<'a> TextLayout<'a> {
             max_width: None,
             max_height: None,
             alignment: None,
+            thai_word_breaking: ThaiWordBreaking::default(),
+            protected_words: &[],
         }
+    }
+
+    /// How Thai words are found for line breaking.
+    pub fn with_thai_word_breaking(mut self, mode: ThaiWordBreaking) -> Self {
+        self.thai_word_breaking = mode;
+        self
+    }
+
+    /// Words never split across lines (names, glossary renderings).
+    pub fn with_protected_words(mut self, words: &'a [String]) -> Self {
+        self.protected_words = words;
+        self
     }
 
     pub fn with_font_size(mut self, size: f32) -> Self {
@@ -220,7 +236,9 @@ impl<'a> TextLayout<'a> {
     fn run_with_size(&self, text: &str, font_size: f32) -> Result<LayoutRun<'a>> {
         let _s = tracing::debug_span!("layout_size", font_size = font_size as u32).entered();
         let shaper = TextShaper::new();
-        let mut line_breaker = LineBreaker::new().with_chinese_word_segmentation();
+        let mut line_breaker = LineBreaker::with_thai_word_breaking(self.thai_word_breaking)
+            .with_chinese_word_segmentation()
+            .with_protected_words(self.protected_words);
         if !self.writing_mode.is_vertical()
             && let Some(lang) = self.hyphenation_lang
         {

@@ -129,26 +129,25 @@ fn preprocess_single_image(
     image: &image::DynamicImage,
     options: &ImagePreprocessOptions<'_>,
 ) -> Result<Tensor> {
-    let (orig_w, orig_h) = image.dimensions();
-    let (width, height) = if options.do_resize {
-        (options.image_size as usize, options.image_size as usize)
+    // Resize on the CPU with a filter that averages when shrinking, like the
+    // reference preprocessor (PIL bilinear). The tensor resize used before
+    // was nearest-neighbour and dropped strokes from large crops.
+    let grey = image.grayscale();
+    let grey = if options.do_resize {
+        let size = options.image_size;
+        grey.resize_exact(size, size, image::imageops::FilterType::Triangle)
     } else {
-        (orig_w as usize, orig_h as usize)
+        grey
     };
+    let (width, height) = grey.dimensions();
 
     let tensor = Tensor::from_vec(
-        image.grayscale().to_rgb8().into_raw(),
-        (1, orig_h as usize, orig_w as usize, 3),
+        grey.to_rgb8().into_raw(),
+        (1, height as usize, width as usize, 3),
         options.device,
     )?
     .permute((0, 3, 1, 2))?
     .to_dtype(DType::F32)?;
-
-    let tensor = if options.do_resize {
-        tensor.interpolate2d(height, width)?
-    } else {
-        tensor
-    };
 
     let tensor = (tensor * (1.0 / 255.0))?;
     let tensor = if options.do_normalize {

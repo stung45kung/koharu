@@ -14,9 +14,3 @@ export type RenderEffect = {
   bold: boolean
 }
 
-/** Optional stroke applied to the rendered sprite. */
-export type RenderStroke = {
-  enabled: boolean
-  color: RgbaColor
-  widthPx?: number
-}

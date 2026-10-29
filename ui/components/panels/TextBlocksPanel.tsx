@@ -1,10 +1,24 @@
 'use client'
 
-import { Languages, LoaderCircleIcon, Trash2Icon } from 'lucide-react'
+import {
+  BookOpenIcon,
+  CheckCheckIcon,
+  LibraryIcon,
+  SparklesIcon,
+  Languages,
+  LoaderCircleIcon,
+  ScanIcon,
+  Trash2Icon,
+  UsersIcon,
+  WandSparklesIcon,
+} from 'lucide-react'
 import { motion } from 'motion/react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CharacterManagerDialog } from '@/components/CharacterManagerDialog'
+import { GlossaryDialog } from '@/components/GlossaryDialog'
+import { LibraryDialog } from '@/components/LibraryDialog'
 import {
   Accordion,
   AccordionContent,
@@ -13,6 +27,7 @@ import {
 } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import { DraftTextarea } from '@/components/ui/draft-textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -24,14 +39,33 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useCurrentPage, useTextNodes, type TextNodeEntry } from '@/hooks/useCurrentPage'
 import { getConfig, startPipeline, useGetCurrentLlm } from '@/lib/api/default/default'
-import { fetchApi } from '@/lib/api/fetch'
 import type { TextDataPatch } from '@/lib/api/schemas'
-import { applyOp, invalidateScene, queueAutoRender, reorderPageTextNodes } from '@/lib/io/scene'
+import {
+  isSuggested,
+  isOtherSpeaker,
+  OTHER_SPEAKER_ID,
+  speakerOf,
+  useAssignSpeaker,
+  useCharacters,
+  useConfirmSpeakers,
+  useGuessSpeakers,
+  type Character,
+  type CharacterBook,
+} from '@/lib/characters'
+import {
+  applyOp,
+  deleteTextNodes,
+  queueAutoRender,
+  reorderPageTextNodes,
+} from '@/lib/io/scene'
+import { ocrBlocks } from '@/lib/ocrBlocks'
 import { ops } from '@/lib/ops'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { useJobsStore } from '@/lib/stores/jobsStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
 import { useSelectionStore } from '@/lib/stores/selectionStore'
+import { cn } from '@/lib/utils'
+import { useHotkeys } from 'react-hotkeys-hook'
 
 export function TextBlocksPanel() {
   const { t } = useTranslation()
@@ -55,6 +89,13 @@ export function TextBlocksPanel() {
   )
   const readingOrder = useEditorUiStore((s) => s.readingOrder)
   const setReadingOrder = useEditorUiStore((s) => s.setReadingOrder)
+  const characterBook = useCharacters()
+  const assignSpeaker = useAssignSpeaker()
+  const guess = useGuessSpeakers()
+  const confirm = useConfirmSpeakers()
+  const [charactersOpen, setCharactersOpen] = useState(false)
+  const [glossaryOpen, setGlossaryOpen] = useState(false)
+  const [libraryOpen, setLibraryOpen] = useState(false)
 
   if (!page) {
     return (
@@ -85,7 +126,54 @@ export function TextBlocksPanel() {
     queueAutoRender(page.id)
   }
 
-  const generate = async (nodeId: string) => {
+  const setSpeaker = async (nodeId: string, characterId: string | null) => {
+    try {
+      // Applies to every selected block when the edited one is part of a
+      // multi-selection (shift/ctrl-click), otherwise just this block.
+      const nodeIds = selectedIds.has(nodeId) ? Array.from(selectedIds) : [nodeId]
+      await assignSpeaker.mutateAsync({ nodeIds, characterId })
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
+  // Why "Guess speakers" can't run right now (shown under the toolbar).
+  const guessBlockedReason =
+    characterBook.characters.length === 0
+      ? t('characters.guessNeedsCharacters')
+      : !llmReady
+        ? t('characters.guessNeedsLlm')
+        : textNodes.length === 0
+          ? t('characters.guessNeedsText')
+          : null
+
+  const suggestedOnPage = textNodes
+    .map((n) => n.id)
+    .filter((id) => isSuggested(characterBook, id))
+
+  const guessPage = async () => {
+    try {
+      const result = await guess.mutateAsync({
+        pageId: page.id,
+        targetLanguage: useEditorUiStore.getState().selectedLanguage,
+      })
+      if (result.considered > 0 && result.assigned === 0) {
+        useEditorUiStore.getState().showError(t('characters.guessNoResult'))
+      }
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
+  const confirmPage = async () => {
+    try {
+      await confirm.mutateAsync(suggestedOnPage)
+    } catch (err) {
+      useEditorUiStore.getState().showError(String(err))
+    }
+  }
+
+  const generate = async (nodeId: string, instruction?: string) => {
     if (!page) return
     const cfg = await getConfig()
     const translator = cfg.pipeline?.translator || 'llm'
@@ -97,6 +185,7 @@ export function TextBlocksPanel() {
       steps: [translator, renderer],
       pages: [page.id],
       textNodeIds: [nodeId],
+      instruction: instruction?.trim() || undefined,
       targetLanguage: editor.selectedLanguage,
       systemPrompt: prefs.customSystemPrompt,
       defaultFont: prefs.defaultFont,
@@ -153,6 +242,77 @@ export function TextBlocksPanel() {
           </Select>
         </div>
       </div>
+      <div
+        className='flex flex-wrap items-center gap-1 border-b border-border px-2 py-1'
+        data-testid='textblocks-speaker-toolbar'
+      >
+        <Button
+          data-testid='textblocks-characters'
+          variant='ghost'
+          size='xs'
+          onClick={() => setCharactersOpen(true)}
+          className='text-[11px]'
+        >
+          <UsersIcon className='size-3' />
+          {t('characters.manageShort')}
+        </Button>
+        <Button
+          data-testid='textblocks-glossary'
+          variant='ghost'
+          size='xs'
+          onClick={() => setGlossaryOpen(true)}
+          className='text-[11px]'
+        >
+          <BookOpenIcon className='size-3' />
+          {t('glossary.button')}
+        </Button>
+        <Button
+          data-testid='textblocks-library'
+          variant='ghost'
+          size='xs'
+          onClick={() => setLibraryOpen(true)}
+          className='text-[11px]'
+        >
+          <LibraryIcon className='size-3' />
+          {t('library.button')}
+        </Button>
+        <Button
+          data-testid='textblocks-guess-speakers'
+          variant='ghost'
+          size='xs'
+          disabled={guessBlockedReason !== null || isProcessing || guess.isPending}
+          onClick={() => void guessPage()}
+          className='text-[11px]'
+        >
+          {guess.isPending ? (
+            <LoaderCircleIcon className='size-3 animate-spin' />
+          ) : (
+            <WandSparklesIcon className='size-3' />
+          )}
+          {t('characters.guessShort')}
+        </Button>
+        {suggestedOnPage.length > 0 && (
+          <Button
+            data-testid='textblocks-confirm-speakers'
+            variant='ghost'
+            size='xs'
+            disabled={confirm.isPending}
+            onClick={() => void confirmPage()}
+            className='text-[11px] text-sky-500 hover:text-sky-500'
+          >
+            <CheckCheckIcon className='size-3' />
+            {t('characters.confirmShort', { count: suggestedOnPage.length })}
+          </Button>
+        )}
+        {guessBlockedReason && (
+          <span
+            data-testid='textblocks-guess-hint'
+            className='basis-full px-1 text-[10px] text-muted-foreground'
+          >
+            {guessBlockedReason}
+          </span>
+        )}
+      </div>
       <ScrollArea
         key={page.id}
         className='min-h-0 flex-1'
@@ -191,17 +351,72 @@ export function TextBlocksPanel() {
                   onPatch={(patch) => void patchText(node.id, patch)}
                   onDelete={() => void removeNode(node.id)}
                   onGenerate={() => void generate(node.id)}
+                  onOcr={() => {
+                    if (!page) return
+                    ocrBlocks(page.id, [node.id]).catch((err) =>
+                      useEditorUiStore.getState().showError(String(err)),
+                    )
+                  }}
+                  onRevise={(instruction) => void generate(node.id, instruction)}
                   processing={isProcessing}
                   llmReady={llmReady}
+                  characterBook={characterBook}
+                  onSpeakerChange={(characterId) => void setSpeaker(node.id, characterId)}
                 />
               ))}
             </Accordion>
           )}
         </div>
       </ScrollArea>
+      <div
+        className={cn(
+          'flex items-center justify-between border-t border-border px-2 py-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase',
+          selectedIds.size <= 1 && 'hidden',
+        )}
+      >
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              data-testid='textblocks-delete-selected'
+              aria-label={t('workspace.deleteSelected')}
+              variant='ghost'
+              size='icon-xs'
+              className='size-5 text-rose-600 hover:text-rose-600'
+              onClick={() => void deleteTextNodes(page.id, selectedIds)}
+            >
+              <Trash2Icon className='size-4' />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side='left' sideOffset={4}>
+            {t('workspace.deleteSelected')}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      <CharacterManagerDialog
+        open={charactersOpen}
+        onOpenChange={setCharactersOpen}
+        selectedStyle={
+          selectedIndex >= 0
+            ? {
+                font: textNodes[selectedIndex].data.style?.fontFamilies?.[0] ?? null,
+                color: textNodes[selectedIndex].data.style?.color ?? null,
+                fontSize: textNodes[selectedIndex].data.style?.fontSize ?? null,
+                bold: textNodes[selectedIndex].data.style?.effect?.bold ?? null,
+                italic: textNodes[selectedIndex].data.style?.effect?.italic ?? null,
+                textAlign: textNodes[selectedIndex].data.style?.textAlign ?? null,
+                pageHeight: page?.height ?? null,
+                stroke: textNodes[selectedIndex].data.style?.stroke ?? null,
+              }
+            : undefined
+        }
+      />
+      <GlossaryDialog open={glossaryOpen} onOpenChange={setGlossaryOpen} />
+      <LibraryDialog open={libraryOpen} onOpenChange={setLibraryOpen} />
     </div>
   )
 }
+
+const UNKNOWN_SPEAKER = '__unknown__'
 
 type BlockCardProps = {
   node: TextNodeEntry
@@ -211,8 +426,12 @@ type BlockCardProps = {
   onPatch: (patch: TextDataPatch) => void
   onDelete: () => void
   onGenerate: () => void
+  onOcr: () => void
+  onRevise: (instruction: string) => void
   processing: boolean
   llmReady: boolean
+  characterBook: CharacterBook
+  onSpeakerChange: (characterId: string | null) => void
 }
 
 function BlockCard({
@@ -223,14 +442,22 @@ function BlockCard({
   onPatch,
   onDelete,
   onGenerate,
+  onOcr,
+  onRevise,
   processing,
   llmReady,
+  characterBook,
+  onSpeakerChange,
 }: BlockCardProps) {
   const { t } = useTranslation()
   const data = node.data
   const hasOcr = !!data.text?.trim()
   const hasTranslation = !!data.translation?.trim()
   const preview = data.translation?.trim() || data.text?.trim()
+  const speaker: Character | null = speakerOf(characterBook, node.id)
+  const other = isOtherSpeaker(characterBook, node.id)
+  const speakerName = speaker?.name ?? (other ? t('characters.otherSpeaker') : null)
+  const guessed = speakerName !== null && isSuggested(characterBook, node.id)
 
   return (
     <motion.div
@@ -245,6 +472,7 @@ function BlockCard({
         className='overflow-hidden rounded-md bg-card/90 text-xs ring-1 ring-border data-[selected=true]:ring-primary'
       >
         <AccordionTrigger
+          data-testid={`textblock-trigger-${index}`}
           onClick={(e) => {
             if (e.shiftKey || e.ctrlKey || e.metaKey) {
               e.preventDefault()
@@ -255,28 +483,44 @@ function BlockCard({
           className='flex w-full cursor-pointer items-center gap-1.5 px-2 py-1.5 text-left transition outline-none hover:no-underline data-[state=open]:bg-accent [&>svg]:hidden'
         >
           <span
-            className={`shrink-0 rounded-md px-1.5 py-0.5 text-center text-[10px] font-medium text-white tabular-nums ${
-              selected ? 'bg-primary' : 'bg-muted-foreground/60'
-            }`}
+            className={`shrink-0 rounded-md px-1.5 py-0.5 text-center text-[10px] font-medium text-white tabular-nums ${selected ? 'bg-primary' : 'bg-muted-foreground/60'
+              }`}
             style={{ minWidth: '1.5rem' }}
           >
             {index + 1}
           </span>
           <div className='flex min-w-0 flex-1 items-center gap-1'>
             <span
-              className={`shrink-0 rounded-sm px-1 py-0.5 text-[9px] font-medium uppercase ${
-                hasOcr ? 'bg-rose-400/70 text-white' : 'bg-muted text-muted-foreground/50'
-              }`}
+              className={`shrink-0 rounded-sm px-1 py-0.5 text-[9px] font-medium uppercase ${hasOcr ? 'bg-rose-400/70 text-white' : 'bg-muted text-muted-foreground/50'
+                }`}
             >
               {t('textBlocks.ocrBadge')}
             </span>
             <span
-              className={`shrink-0 rounded-sm px-1 py-0.5 text-[9px] font-medium uppercase ${
-                hasTranslation ? 'bg-rose-400/70 text-white' : 'bg-muted text-muted-foreground/50'
-              }`}
+              className={`shrink-0 rounded-sm px-1 py-0.5 text-[9px] font-medium uppercase ${hasTranslation ? 'bg-rose-400/70 text-white' : 'bg-muted text-muted-foreground/50'
+                }`}
             >
               {t('textBlocks.translationBadge')}
             </span>
+            {speakerName && (
+              <span
+                data-testid={`textblock-speaker-chip-${index}`}
+                data-suggested={guessed}
+                className={`max-w-20 shrink-0 truncate rounded-sm px-1 py-0.5 text-[9px] font-medium ${
+                  guessed
+                    ? other
+                      ? 'border border-dashed border-zinc-400 text-zinc-500'
+                      : 'border border-dashed border-sky-500 text-sky-600 dark:text-sky-300'
+                    : other
+                      ? 'bg-zinc-500/70 text-white'
+                      : 'bg-sky-500/70 text-white'
+                }`}
+                title={guessed ? `${speakerName} (${t('characters.suggestedHint')})` : speakerName}
+              >
+                {speakerName}
+                {guessed && '?'}
+              </span>
+            )}
             {preview && (
               <p className='line-clamp-1 min-w-0 flex-1 text-xs text-muted-foreground'>{preview}</p>
             )}
@@ -324,6 +568,24 @@ function BlockCard({
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
+                        data-testid={`textblock-reocr-${index}`}
+                        aria-label={t('textBlocks.ocrBlock')}
+                        variant='ghost'
+                        size='icon-xs'
+                        disabled={processing}
+                        onClick={onOcr}
+                        className='size-5'
+                      >
+                        <ScanIcon className='size-3' />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side='left' sideOffset={4}>
+                      {t('textBlocks.ocrBlock')}
+                    </TooltipContent>
+                  </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
                         data-testid={`textblock-generate-${index}`}
                         aria-label={t('llm.generateTooltip')}
                         variant='ghost'
@@ -343,6 +605,11 @@ function BlockCard({
                       {t('llm.generateTooltip')}
                     </TooltipContent>
                   </Tooltip>
+                  <ReviseButton
+                    index={index}
+                    disabled={!llmReady || processing || !hasOcr}
+                    onRevise={onRevise}
+                  />
                 </div>
               </div>
               <DraftTextarea
@@ -354,9 +621,176 @@ function BlockCard({
                 className='min-h-0 resize-none px-1.5 py-1 text-xs'
               />
             </div>
+            <div className='flex flex-col gap-0.5'>
+              <span className='flex items-baseline justify-between text-[10px] text-muted-foreground'>
+                <span className='uppercase'>{t('characters.speakerLabel')}</span>
+                <span className='opacity-70'>{t('characters.speakerKeysHint')}</span>
+              </span>
+              <Select
+                value={speaker?.id ?? (other ? OTHER_SPEAKER_ID : UNKNOWN_SPEAKER)}
+                onValueChange={(value) =>
+                  onSpeakerChange(value === UNKNOWN_SPEAKER ? null : value)
+                }
+              >
+                <SelectTrigger
+                  data-testid={`textblock-speaker-${index}`}
+                  aria-label={t('characters.speakerLabel')}
+                  className='h-7 w-full px-1.5 text-xs'
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={UNKNOWN_SPEAKER} className='text-xs text-muted-foreground'>
+                    <span className='mr-1.5 font-mono text-[10px] opacity-60'>0</span>
+                    {t('characters.unknownSpeaker')}
+                  </SelectItem>
+                  <SelectItem
+                    value={OTHER_SPEAKER_ID}
+                    className='text-xs text-muted-foreground'
+                    data-testid={`textblock-speaker-other-${index}`}
+                  >
+                    <span className='mr-1.5 font-mono text-[10px] opacity-60'>O</span>
+                    {t('characters.otherSpeakerOption')}
+                  </SelectItem>
+                  {characterBook.characters.map((c, i) => (
+                    <SelectItem key={c.id} value={c.id} className='text-xs'>
+                      <span className='mr-1.5 font-mono text-[10px] opacity-60'>
+                        {i < 9 ? i + 1 : ' '}
+                      </span>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </AccordionContent>
       </AccordionItem>
     </motion.div>
+  )
+}
+
+const REVISE_HISTORY_KEY = 'koharu.reviseHistory'
+const REVISE_HISTORY_MAX = 6
+
+const loadReviseHistory = (): string[] => {
+  try {
+    const raw = localStorage.getItem(REVISE_HISTORY_KEY)
+    const list = raw ? (JSON.parse(raw) as unknown) : []
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+const saveReviseHistory = (instruction: string) => {
+  try {
+    const next = [instruction, ...loadReviseHistory().filter((x) => x !== instruction)].slice(
+      0,
+      REVISE_HISTORY_MAX,
+    )
+    localStorage.setItem(REVISE_HISTORY_KEY, JSON.stringify(next))
+  } catch {
+    // Storage unavailable: the history is only a convenience.
+  }
+}
+
+/** Re-translate one block with a short request ("more polite", ...). */
+function ReviseButton({
+  index,
+  disabled,
+  onRevise,
+}: {
+  index: number
+  disabled: boolean
+  onRevise: (instruction: string) => void
+}) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [instruction, setInstruction] = useState('')
+  const [history, setHistory] = useState<string[]>([])
+
+  useEffect(() => {
+    if (open) setHistory(loadReviseHistory())
+  }, [open])
+
+  const submit = (value: string) => {
+    const text = value.trim()
+    if (!text) return
+    saveReviseHistory(text)
+    onRevise(text)
+    setOpen(false)
+    setInstruction('')
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>
+            <Button
+              data-testid={`textblock-revise-${index}`}
+              aria-label={t('textBlocks.revise')}
+              variant='ghost'
+              size='icon-xs'
+              disabled={disabled}
+              className='size-5'
+            >
+              <SparklesIcon className='size-3' />
+            </Button>
+          </PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent side='left' sideOffset={4}>
+          {t('textBlocks.revise')}
+        </TooltipContent>
+      </Tooltip>
+      <PopoverContent side='left' align='start' className='w-72 p-2'>
+        <div className='flex flex-col gap-1.5'>
+          <span className='text-xs font-medium'>{t('textBlocks.reviseTitle')}</span>
+          <textarea
+            data-testid={`textblock-revise-input-${index}`}
+            autoFocus
+            value={instruction}
+            maxLength={1000}
+            rows={2}
+            placeholder={t('textBlocks.revisePlaceholder')}
+            onChange={(e) => setInstruction(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault()
+                submit(instruction)
+              }
+            }}
+            className='w-full resize-none rounded-md border border-input bg-transparent px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring'
+          />
+          {history.length > 0 && (
+            <div className='flex flex-wrap gap-1'>
+              {history.map((h) => (
+                <button
+                  key={h}
+                  type='button'
+                  onClick={() => submit(h)}
+                  className='max-w-full truncate rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground'
+                  title={h}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className='flex items-center justify-between gap-2'>
+            <span className='text-[10px] text-muted-foreground'>{t('textBlocks.reviseHint')}</span>
+            <Button
+              size='xs'
+              data-testid={`textblock-revise-submit-${index}`}
+              disabled={!instruction.trim()}
+              onClick={() => submit(instruction)}
+            >
+              {t('textBlocks.reviseSubmit')}
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

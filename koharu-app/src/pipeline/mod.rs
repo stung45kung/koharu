@@ -73,7 +73,7 @@ fn step_for(info: &EngineInfo) -> Option<PipelineStep> {
         | Artifact::FontPredictions
         | Artifact::BubbleMask => Some(PipelineStep::Detect),
         Artifact::OcrText => Some(PipelineStep::Ocr),
-        Artifact::Translations => Some(PipelineStep::LlmGenerate),
+        Artifact::Speakers | Artifact::Translations => Some(PipelineStep::LlmGenerate),
         Artifact::Inpainted => Some(PipelineStep::Inpaint),
         Artifact::FinalRender => Some(PipelineStep::Render),
         // Non-UI-facing artifacts (inputs, intermediate sprites) — no
@@ -201,6 +201,8 @@ pub async fn run(
                 }
             };
             let scene_snap = session.scene_snapshot();
+            let characters = session.characters();
+            let typesetting = session.typesetting();
             let ctx = EngineCtx {
                 scene: &scene_snap,
                 page: *page_id,
@@ -210,6 +212,9 @@ pub async fn run(
                 options: &spec.options,
                 llm: &llm,
                 renderer: &renderer,
+                characters: &characters,
+                typesetting: &typesetting,
+                session: &session,
             };
             let step_result = async { engine.run(ctx).await }
                 .instrument(tracing::info_span!("step", engine = info.id, page = %page_id))
@@ -355,6 +360,29 @@ pub fn catalog() -> EngineCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn speaker_guess_runs_between_ocr_and_translation() {
+        // Deliberately out of order: the DAG must fix it.
+        let ids = ["llm", "speaker-guess", "manga-ocr"];
+        let infos: Vec<&EngineInfo> = ids
+            .iter()
+            .map(|id| Registry::find(id).expect("engine registered"))
+            .collect();
+        let order = engine::build_order(&infos).expect("order");
+        let pos = |id: &str| {
+            let index = ids.iter().position(|i| *i == id).unwrap();
+            order.iter().position(|o| *o == index).unwrap()
+        };
+        assert!(pos("manga-ocr") < pos("speaker-guess"));
+        assert!(pos("speaker-guess") < pos("llm"));
+    }
+
+    #[test]
+    fn translation_alone_still_resolves_without_speaker_step() {
+        let infos = vec![Registry::find("llm").expect("llm")];
+        assert_eq!(engine::build_order(&infos).expect("order"), vec![0]);
+    }
 
     #[test]
     fn catalog_includes_anime_text_detector() {

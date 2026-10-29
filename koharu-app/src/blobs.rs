@@ -132,7 +132,9 @@ fn decode_blob(bytes: &[u8]) -> Result<DynamicImage> {
         let img = RgbaImage::from_raw(w, h, pixels).context("invalid raw RGBA blob dimensions")?;
         return Ok(DynamicImage::ImageRgba8(img));
     }
-    Ok(image::load_from_memory(bytes)?)
+    // Pages of projects imported before sRGB conversion still hold the
+    // original file, profile included: convert while decoding.
+    Ok(crate::page_import::decode_srgb(bytes)?.0)
 }
 
 #[cfg(test)]

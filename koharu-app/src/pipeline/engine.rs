@@ -21,7 +21,9 @@ use std::sync::atomic::AtomicBool;
 
 use anyhow::{Result, bail};
 use async_trait::async_trait;
-use koharu_core::{NodeId, Op, PageId, ReadingOrder, Region, Scene};
+use koharu_core::{
+    CharacterBook, NodeId, Op, PageId, ReadingOrder, Region, Scene, TypesettingDefaults,
+};
 use koharu_runtime::RuntimeManager;
 use parking_lot::RwLock;
 use petgraph::algo::toposort;
@@ -47,6 +49,13 @@ pub struct EngineCtx<'a> {
     pub options: &'a PipelineRunOptions,
     pub llm: &'a llm::Model,
     pub renderer: &'a renderer::Renderer,
+    /// Project character profiles + text-node speakers (may be empty).
+    pub characters: &'a CharacterBook,
+    /// Project default text size (may be unset).
+    pub typesetting: &'a TypesettingDefaults,
+    /// The open project, for engines that keep state outside the scene
+    /// (e.g. `speaker-guess` writing the character book).
+    pub session: &'a crate::session::ProjectSession,
 }
 
 /// Options threaded through a pipeline run.
@@ -63,6 +72,10 @@ pub struct PipelineRunOptions {
     /// and process just that one block. Other engines ignore it.
     pub region: Option<Region>,
     pub reading_order: Option<ReadingOrder>,
+    /// Extra request from the user for re-translating the blocks in
+    /// `text_node_ids` ("more polite", "use X instead of Y"…). The LLM
+    /// engine sends it with the blocks' current translations.
+    pub instruction: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

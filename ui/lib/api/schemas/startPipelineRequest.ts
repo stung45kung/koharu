@@ -12,6 +12,11 @@ export interface StartPipelineRequest {
   /** @nullable */
   defaultFont?: string | null
   /**
+   * Re-translation request for the blocks in `textNodeIds`.
+   * @nullable
+   */
+  instruction?: string | null
+  /**
    * `None` → whole project, `Some(pages)` → just those pages.
    * @nullable
    */

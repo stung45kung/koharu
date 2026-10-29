@@ -1,9 +1,7 @@
 name: Documentation
+# Fork: upstream-only job, run manually if ever needed.
 on:
-  push:
-    branches:
-      - master
-      - main
+  workflow_dispatch:
 permissions:
   contents: read
   pages: write

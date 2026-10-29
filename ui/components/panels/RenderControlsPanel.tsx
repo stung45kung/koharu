@@ -8,11 +8,13 @@ import {
   ItalicIcon,
   MinusIcon,
   PlusIcon,
+  RotateCcwIcon,
   SquareIcon,
 } from 'lucide-react'
 import { type ComponentType, useMemo, useRef, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ProjectTypesettingDefaults } from '@/components/panels/ProjectTypesettingDefaults'
 import { Button } from '@/components/ui/button'
 import { ColorPicker } from '@/components/ui/color-picker'
 import { FontSelect, useGoogleFontPreview } from '@/components/ui/font-select'
@@ -52,6 +54,14 @@ import {
 } from '@/lib/font-utils'
 import { applyOp, invalidateScene, queueAutoRender } from '@/lib/io/scene'
 import { ops } from '@/lib/ops'
+import { speakerOf, useCharacters } from '@/lib/characters'
+import {
+  layeredStroke,
+  resetBlockStyles,
+  scaleForPage,
+  useSaveTypesetting,
+  useTypesetting,
+} from '@/lib/typesetting'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
 import { cn } from '@/lib/utils'
@@ -109,6 +119,12 @@ const normalizeStroke = (stroke?: TextStrokeStyle | null): TextStrokeStyle => ({
   widthPx: stroke?.widthPx ?? null,
 })
 
+/** Automatic outline colour: black around light text, white around dark. */
+const autoStrokeColor = (text: number[]): number[] => {
+  const lum = 0.299 * (text[0] ?? 0) + 0.587 * (text[1] ?? 0) + 0.114 * (text[2] ?? 0)
+  return lum > 128 ? [0, 0, 0, 255] : [255, 255, 255, 255]
+}
+
 const normalizeEffect = (effect?: TextShaderEffect | null): TextShaderEffect => ({
   bold: effect?.bold ?? false,
   italic: effect?.italic ?? false,
@@ -121,25 +137,57 @@ const predictionColor = (prediction?: FontPrediction | null): number[] | undefin
 }
 
 // Mirrors renderer precedence: explicit style color → predicted color → black.
-const effectiveColorOf = (style?: TextStyle | null, prediction?: FontPrediction | null): number[] =>
-  style?.color ?? predictionColor(prediction) ?? DEFAULT_COLOR
+// Block style colour → project default colour → detected source colour →
+// black (same order as the renderer's `resolve_text_color`).
+const effectiveColorOf = (
+  style?: TextStyle | null,
+  prediction?: FontPrediction | null,
+  projectColor?: number[] | null,
+): number[] => style?.color ?? projectColor ?? predictionColor(prediction) ?? DEFAULT_COLOR
 
 const hasExplicitColor = (node: TextNodeEntry) => Array.isArray(node.data.style?.color)
+
+const sameColor = (a?: number[] | null, b?: number[] | null) =>
+  !!a && !!b && a.length >= 3 && b.length >= 3 && a.slice(0, 4).every((v, i) => v === (b[i] ?? 255))
+
+/**
+ * Colour the renderer actually draws, speaker colour included. A block
+ * colour equal to the project default, the detected colour or black was
+ * only stamped in by a style edit, so the speaker's colour wins over it
+ * (mirrors `resolve_text_color` in `koharu-app/src/renderer.rs`).
+ */
+const renderedColorOf = (
+  style: TextStyle | null | undefined,
+  prediction: FontPrediction | null | undefined,
+  projectColor: number[] | null | undefined,
+  speakerColor: number[] | null | undefined,
+): number[] => {
+  if (!speakerColor) return effectiveColorOf(style, prediction, projectColor)
+  if (!style?.color) return speakerColor
+  const stamped =
+    sameColor(style.color, projectColor) ||
+    sameColor(style.color, predictionColor(prediction)) ||
+    sameColor(style.color, DEFAULT_COLOR)
+  return stamped ? speakerColor : style.color
+}
 
 export function RenderControlsPanel() {
   const { t } = useTranslation()
   const page = useCurrentPage()
   const textNodes = useTextNodes()
   const selectedNode = useSelectedTextNode()
+  const characterBook = useCharacters()
   const selectedNodes = useSelectedTextNodes()
   const { data: availableFonts = [] } = useListFonts()
   useGetGoogleFontsCatalog() // prefetch catalog so picker can decorate Google entries
   const appDefaultFont = usePreferencesStore((s) => s.defaultFont)
   const favoriteFonts = usePreferencesStore((s) => s.favoriteFonts)
   const toggleFavoriteFont = usePreferencesStore((s) => s.toggleFavoriteFont)
+  const typesetting = useTypesetting()
+  const saveTypesetting = useSaveTypesetting()
+  const projectColor = typesetting.color ?? null
   const renderEffect = useEditorUiStore((s) => s.renderEffect)
   const setRenderEffect = useEditorUiStore((s) => s.setRenderEffect)
-  const setRenderStroke = useEditorUiStore((s) => s.setRenderStroke)
 
   const sortedFonts = useMemo(() => {
     return [...(availableFonts ?? [])].sort((a, b) => a.familyName.localeCompare(b.familyName))
@@ -258,9 +306,50 @@ export function RenderControlsPanel() {
 
   const selectedStyle = selectedNode?.data.style ?? firstNode?.data.style
   const colorSource = selectedNode ?? firstNode
-  const currentColor = effectiveColorOf(colorSource?.data.style, colorSource?.data.fontPrediction)
-  const currentColorHex = colorToHex(currentColor)
-  const currentStroke = normalizeStroke(selectedStyle?.stroke)
+  const currentColor = effectiveColorOf(
+    colorSource?.data.style,
+    colorSource?.data.fontPrediction,
+    projectColor,
+  )
+  const speakerColor = colorSource ? speakerOf(characterBook, colorSource.id)?.color : null
+  const currentColorHex = colorToHex(
+    renderedColorOf(
+      colorSource?.data.style,
+      colorSource?.data.fontPrediction,
+      projectColor,
+      speakerColor,
+    ),
+  )
+  // Outline shown in the controls: the selected block's own outline, else
+  // what it actually renders with (speaker / project default, auto colour);
+  // with nothing selected, the project default (edited in place).
+  const currentStroke: TextStrokeStyle = (() => {
+    if (selectedNode) {
+      if (selectedNode.data.style?.stroke) return normalizeStroke(selectedNode.data.style.stroke)
+      const d = layeredStroke(
+        speakerOf(characterBook, selectedNode.id)?.stroke,
+        typesetting.stroke,
+      )
+      const rendered = renderedColorOf(
+        selectedNode.data.style,
+        selectedNode.data.fontPrediction,
+        projectColor,
+        speakerOf(characterBook, selectedNode.id)?.color,
+      )
+      return {
+        enabled: d?.enabled ?? true,
+        color: d?.color ?? autoStrokeColor(rendered),
+        widthPx:
+          d?.widthPx && page ? Number(scaleForPage(typesetting, d.widthPx, page.height).toFixed(1)) : null,
+      }
+    }
+    const p = typesetting.stroke
+    return {
+      enabled: p?.enabled ?? true,
+      color: p?.color ?? DEFAULT_STROKE_COLOR,
+      widthPx: p?.widthPx ?? null,
+    }
+  })()
   const currentStrokeColorHex = colorToHex(currentStroke.color ?? DEFAULT_STROKE_COLOR)
   const currentStrokeWidth = currentStroke.widthPx ?? DEFAULT_STROKE_WIDTH
   const currentEffect = normalizeEffect(selectedStyle?.effect ?? renderEffect)
@@ -288,7 +377,7 @@ export function RenderControlsPanel() {
     const nextStyle: TextStyle = {
       fontFamilies: updates.fontFamilies ?? current?.fontFamilies ?? [],
       fontSize: updates.fontSize ?? current?.fontSize ?? null,
-      color: updates.color ?? effectiveColorOf(current, n.data.fontPrediction),
+      color: updates.color ?? effectiveColorOf(current, n.data.fontPrediction, projectColor),
       effect: updates.effect ?? current?.effect ?? null,
       stroke: updates.stroke ?? current?.stroke ?? null,
       textAlign: updates.textAlign ?? current?.textAlign ?? null,
@@ -323,6 +412,43 @@ export function RenderControlsPanel() {
     return true
   }
 
+  const currentRotation = selectedNode?.transform.rotationDeg ?? 0
+
+  /** Set the rotation (degrees, clockwise) of every selected block. */
+  const applyRotationToSelected = (deg: number) => {
+    if (!page || selectedNodes.length === 0) return
+    let angle = ((deg % 360) + 360) % 360
+    if (angle > 180) angle -= 360
+    angle = Math.round(angle * 10) / 10
+    const opsList = selectedNodes.map((n) =>
+      ops.updateNode(page.id, n.id, { transform: { ...n.transform, rotationDeg: angle } }),
+    )
+    void (async () => {
+      await applyOp(opsList.length === 1 ? opsList[0] : ops.batch('Rotate blocks', opsList))
+      queueAutoRender(page.id)
+    })()
+  }
+
+  /** Selected blocks (or every block on the page) forget their own style. */
+  const resetStyles = () => {
+    if (!page) return
+    const targets = (selectedNodes.length > 0 ? selectedNodes : textNodes).filter(
+      (n) => n.data.style,
+    )
+    if (targets.length === 0) return
+    void (async () => {
+      await resetBlockStyles(
+        page.id,
+        targets.map((n) => n.id),
+      )
+      await invalidateScene()
+      queueAutoRender(page.id)
+    })()
+  }
+  const resettableCount = (selectedNodes.length > 0 ? selectedNodes : textNodes).filter(
+    (n) => n.data.style,
+  ).length
+
   const applyStyleToAll = (updates: Partial<TextStyle>) => {
     applyStyleToNodes(textNodes, updates, 'Bulk style update')
   }
@@ -335,11 +461,30 @@ export function RenderControlsPanel() {
 
   const applyStrokeSetting = (nextStroke: TextStrokeStyle) => {
     if (applyStyleToSelected({ stroke: normalizeStroke(nextStroke) })) return
-    setRenderStroke({
-      enabled: nextStroke.enabled ?? true,
-      color: (nextStroke.color ?? DEFAULT_STROKE_COLOR) as [number, number, number, number],
-      widthPx: nextStroke.widthPx ?? undefined,
-    })
+    // Nothing selected: this is the project's default outline.
+    void saveTypesetting
+      .mutateAsync({
+        ...typesetting,
+        referencePageHeight: typesetting.referencePageHeight ?? page?.height ?? null,
+        stroke: {
+          enabled: nextStroke.enabled ?? true,
+          color: nextStroke.color ?? typesetting.stroke?.color ?? null,
+          widthPx: nextStroke.widthPx ?? typesetting.stroke?.widthPx ?? null,
+        },
+      })
+      .then(() => {
+        if (page) queueAutoRender(page.id)
+      })
+      .catch((err) => useEditorUiStore.getState().showError(String(err)))
+  }
+
+  const clearProjectStroke = () => {
+    void saveTypesetting
+      .mutateAsync({ ...typesetting, stroke: null })
+      .then(() => {
+        if (page) queueAutoRender(page.id)
+      })
+      .catch((err) => useEditorUiStore.getState().showError(String(err)))
   }
 
   const updateStrokeWidth = (value: number) => {
@@ -387,8 +532,43 @@ export function RenderControlsPanel() {
 
   return (
     <div className='flex w-full min-w-0 flex-col gap-2'>
+      <ProjectTypesettingDefaults
+        selectedFont={selectedNode?.data.style?.fontFamilies?.[0] ?? currentFontCandidate ?? undefined}
+        selectedFontSize={currentFontSize}
+        pageHeight={page?.height}
+        selectedColor={
+          selectedNode
+            ? effectiveColorOf(
+                selectedNode.data.style,
+                selectedNode.data.fontPrediction,
+                projectColor,
+              )
+            : undefined
+        }
+        hasSelection={!!selectedNode}
+      />
       {/* Scope */}
-      <div className='flex items-center justify-end'>
+      <div className='flex items-center justify-between gap-2'>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant='ghost'
+              size='xs'
+              className='h-6 gap-1 px-1.5 text-[10px] text-muted-foreground'
+              data-testid='render-reset-style'
+              disabled={resettableCount === 0}
+              onClick={resetStyles}
+            >
+              <RotateCcwIcon className='size-3' />
+              {t('render.resetStyle')}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side='bottom' className='max-w-60 text-xs'>
+            {selectedNodes.length > 0
+              ? t('render.resetStyleHintSelected')
+              : t('render.resetStyleHintAll')}
+          </TooltipContent>
+        </Tooltip>
         <span
           data-testid='render-scope-indicator'
           className={cn(
@@ -671,6 +851,64 @@ export function RenderControlsPanel() {
         </div>
       </div>
 
+      {/* Rotation */}
+      <div className='flex flex-col gap-0.5'>
+        <span className='text-[10px] font-medium text-muted-foreground uppercase'>
+          {t('render.rotationLabel')}
+        </span>
+        <div className='flex items-center gap-1'>
+          <div className='flex min-w-0 flex-1 items-center rounded-md border border-input bg-background shadow-xs'>
+            <Button
+              type='button'
+              variant='ghost'
+              size='icon-sm'
+              className='size-6 shrink-0 rounded-r-none border-r'
+              disabled={selectedNodes.length === 0}
+              onClick={() => applyRotationToSelected(currentRotation - 5)}
+            >
+              <MinusIcon className='size-3' />
+            </Button>
+            <Input
+              type='number'
+              step='1'
+              min='-180'
+              max='180'
+              className='h-6 min-w-0 flex-1 [appearance:textfield] rounded-none border-0 px-0.5 text-center text-xs shadow-none focus-visible:ring-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none'
+              data-testid='render-rotation'
+              disabled={selectedNodes.length === 0}
+              value={selectedNodes.length > 0 ? Math.round(currentRotation * 10) / 10 : ''}
+              placeholder='0'
+              onChange={(event) => {
+                const parsed = Number.parseFloat(event.target.value)
+                if (!Number.isFinite(parsed)) return
+                applyRotationToSelected(parsed)
+              }}
+            />
+            <Button
+              type='button'
+              variant='ghost'
+              size='icon-sm'
+              className='size-6 shrink-0 rounded-l-none border-l'
+              disabled={selectedNodes.length === 0}
+              onClick={() => applyRotationToSelected(currentRotation + 5)}
+            >
+              <PlusIcon className='size-3' />
+            </Button>
+          </div>
+          <Button
+            type='button'
+            variant='ghost'
+            size='xs'
+            className='text-[11px]'
+            data-testid='render-rotation-reset'
+            disabled={selectedNodes.length === 0 || currentRotation === 0}
+            onClick={() => applyRotationToSelected(0)}
+          >
+            0°
+          </Button>
+        </div>
+      </div>
+
       {/* Border / Stroke */}
       <div className='flex flex-col gap-0.5'>
         <span className='text-[10px] font-medium text-muted-foreground uppercase'>
@@ -766,7 +1004,32 @@ export function RenderControlsPanel() {
               <PlusIcon className='size-3' />
             </Button>
           </div>
+          {!selectedNode && typesetting.stroke && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant='ghost'
+                  size='icon-sm'
+                  className='size-7 shrink-0'
+                  data-testid='render-stroke-project-clear'
+                  onClick={clearProjectStroke}
+                >
+                  <RotateCcwIcon className='size-3' />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side='bottom' sideOffset={4} className='max-w-56 text-xs'>
+                {t('render.strokeProjectClear')}
+              </TooltipContent>
+            </Tooltip>
+          )}
         </div>
+        <span className='text-[10px] text-muted-foreground'>
+          {selectedNode
+            ? selectedNode.data.style?.stroke
+              ? t('render.strokeHintBlock')
+              : t('render.strokeHintInherited')
+            : t('render.strokeHintProject')}
+        </span>
       </div>
     </div>
   )

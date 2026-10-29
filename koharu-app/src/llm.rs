@@ -243,8 +243,40 @@ impl Model {
         };
         Ok(out
             .into_iter()
-            .map(|s| strip_wrapping_quotes(s.trim()))
+            .map(|s| collapse_runaway_repeats(&strip_wrapping_quotes(s.trim())))
             .collect())
+    }
+}
+
+impl Model {
+    /// Ask the loaded LLM `instructions` about each image (e.g. to read its
+    /// text). Needs a provider that accepts images, such as LM Studio with
+    /// a vision model; the built-in local models cannot.
+    pub async fn read_images(
+        &self,
+        images: &[image::DynamicImage],
+        instructions: &str,
+    ) -> Result<Vec<String>> {
+        let guard = self.state.read().await;
+        let (target, provider) = match &*guard {
+            State::ReadyProvider { target, provider } => (target, provider),
+            State::ReadyLocal(_) => anyhow::bail!(
+                "the built-in LLM cannot read images: load a vision model through an API provider (e.g. LM Studio)"
+            ),
+            State::Loading { .. } => anyhow::bail!("LLM is still loading"),
+            State::Failed { error, .. } => anyhow::bail!("LLM failed to load: {error}"),
+            State::Empty => anyhow::bail!("no LLM loaded"),
+        };
+        let mut out = Vec::with_capacity(images.len());
+        for image in images {
+            let mut png = std::io::Cursor::new(Vec::new());
+            image.write_to(&mut png, image::ImageFormat::Png)?;
+            let reply = provider
+                .read_image(png.get_ref(), instructions, &target.model_id)
+                .await?;
+            out.push(strip_thinking_block(&reply).to_string());
+        }
+        Ok(out)
     }
 }
 
@@ -523,6 +555,48 @@ fn strip_thinking_block(text: &str) -> &str {
     text
 }
 
+/// Most times a repeated piece may appear in a row: a single character
+/// (a stretched vowel, dots), a short sound like "อ๊ะ ", a longer phrase.
+const MAX_CHAR_REPEATS: usize = 6;
+const MAX_SHORT_REPEATS: usize = 5;
+const MAX_PHRASE_REPEATS: usize = 3;
+const MAX_REPEAT_UNIT: usize = 24;
+
+/// Cut a piece repeated over and over (local models can loop on moans and
+/// other sound effects until they run out of tokens) down to a few repeats.
+fn collapse_runaway_repeats(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    'scan: while i < chars.len() {
+        for unit in 1..=MAX_REPEAT_UNIT.min(chars.len() - i) {
+            let piece = &chars[i..i + unit];
+            let mut repeats = 1;
+            while chars
+                .get(i + repeats * unit..i + (repeats + 1) * unit)
+                .is_some_and(|next| next == piece)
+            {
+                repeats += 1;
+            }
+            let limit = match unit {
+                1 => MAX_CHAR_REPEATS,
+                2..=6 => MAX_SHORT_REPEATS,
+                _ => MAX_PHRASE_REPEATS,
+            };
+            if repeats > limit {
+                for _ in 0..limit {
+                    out.extend(piece);
+                }
+                i += repeats * unit;
+                continue 'scan;
+            }
+        }
+        out.push(chars[i]);
+        i += 1;
+    }
+    out
+}
+
 fn strip_wrapping_quotes(text: &str) -> String {
     let trimmed = text.trim();
     if trimmed.len() >= 2 {
@@ -535,4 +609,31 @@ fn strip_wrapping_quotes(text: &str) -> String {
         }
     }
     trimmed.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::collapse_runaway_repeats;
+
+    #[test]
+    fn runaway_repeats_are_cut_down() {
+        assert_eq!(collapse_runaway_repeats(&"อ๊ะ ".repeat(9)), "อ๊ะ ".repeat(5));
+        assert_eq!(
+            collapse_runaway_repeats(&format!("อ๊{}", "า".repeat(300))),
+            format!("อ๊{}", "า".repeat(6))
+        );
+        let phrase = "ไม่ไหวแล้ว อ๊าา~ ";
+        assert_eq!(
+            collapse_runaway_repeats(&phrase.repeat(40)),
+            phrase.repeat(3)
+        );
+    }
+
+    #[test]
+    fn ordinary_text_is_left_alone() {
+        for text in ["อ๊ะ อ๊ะ", "เดี๋ยวนะ......", "ฮะๆๆๆ", "ปังปังปัง!", "Hello  world"]
+        {
+            assert_eq!(collapse_runaway_repeats(text), text);
+        }
+    }
 }

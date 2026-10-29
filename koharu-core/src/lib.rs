@@ -8,20 +8,25 @@
 //! - `style`, `font`, `google_fonts` — text styling + font-prediction types.
 
 pub mod blob;
+pub mod characters;
 pub mod events;
 pub mod font;
+pub mod glossary;
 pub mod google_fonts;
 pub mod op;
 pub mod protocol;
 pub mod scene;
 pub mod style;
+pub mod typesetting;
 
 pub use blob::BlobRef;
+pub use characters::{Character, CharacterBook, CharacterId};
 pub use events::{
     AppEvent, DownloadProgress, DownloadStatus, JobFinishedEvent, JobStatus, JobSummary,
     JobWarningEvent, PipelineProgress, PipelineStatus, PipelineStep, ProjectSummary, SnapshotEvent,
 };
 pub use font::{FontPrediction, NamedFontPrediction, TextDirection, TopFont};
+pub use glossary::{Glossary, GlossaryEntry};
 pub use google_fonts::{FontSource, GoogleFontCatalog, GoogleFontEntry, GoogleFontVariant};
 pub use op::{
     ImageDataPatch, MaskDataPatch, NodeDataPatch, NodePatch, Op, OpError, OpResult, PagePatch,
@@ -38,3 +43,4 @@ pub use scene::{
     ProjectMeta, ProjectStyle, Scene, TextData, Transform,
 };
 pub use style::{TextAlign, TextShaderEffect, TextStrokeStyle, TextStyle};
+pub use typesetting::{StrokeDefaults, TypesettingDefaults};

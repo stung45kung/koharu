@@ -50,11 +50,24 @@ struct HyphenationConfig {
     min_word_len: usize,
 }
 
+/// How Thai (and other South-East Asian scripts) are split into words.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ThaiWordBreaking {
+    /// ICU's word dictionary: reliable for ordinary words, splits unknown
+    /// words (transliterated names, slang) into pieces.
+    #[default]
+    Dictionary,
+    /// ICU's LSTM model: guesses unknown words, less predictable.
+    Lstm,
+}
+
 /// Line breaker using ICU4X.
 pub struct LineBreaker {
     segmenter: LineSegmenterBorrowed<'static>,
     hyphenation: Option<HyphenationConfig>,
     chinese_word_segmentation: bool,
+    /// Words never split across lines (glossary renderings, names).
+    protected_words: Vec<String>,
 }
 
 fn trim_mandatory_break_suffix(text: &str, start: usize, end: usize) -> usize {
@@ -76,11 +89,33 @@ impl LineBreaker {
     ///
     /// TODO: CJK specific customization.
     pub fn new() -> Self {
+        Self::with_thai_word_breaking(ThaiWordBreaking::default())
+    }
+
+    /// A line breaker using the given Thai word breaking.
+    pub fn with_thai_word_breaking(mode: ThaiWordBreaking) -> Self {
+        let segmenter = match mode {
+            ThaiWordBreaking::Dictionary => {
+                LineSegmenter::new_dictionary(LineBreakOptions::default())
+            }
+            ThaiWordBreaking::Lstm => LineSegmenter::new_auto(LineBreakOptions::default()),
+        };
         Self {
-            segmenter: LineSegmenter::new_auto(LineBreakOptions::default()),
+            segmenter,
             hyphenation: None,
             chinese_word_segmentation: false,
+            protected_words: Vec::new(),
         }
+    }
+
+    /// Never break inside these words (exact matches in the text).
+    pub fn with_protected_words(mut self, words: &[String]) -> Self {
+        self.protected_words = words
+            .iter()
+            .map(|w| w.trim().to_string())
+            .filter(|w| w.chars().count() >= 2)
+            .collect();
+        self
     }
 
     /// Keep Chinese Jieba words together when selecting discretionary line breaks.
@@ -130,8 +165,17 @@ impl LineBreaker {
             })
             .collect();
 
-        if self.chinese_word_segmentation && should_segment_as_chinese(text) {
+        let opportunities = if self.chinese_word_segmentation && should_segment_as_chinese(text) {
             apply_chinese_word_segmentation(text, opportunities)
+        } else {
+            opportunities
+        };
+        let opportunities = apply_protected_ranges(
+            opportunities,
+            &protected_word_ranges(text, &self.protected_words),
+        );
+        if contains_thai(text) {
+            glue_thai(text, opportunities)
         } else {
             opportunities
         }
@@ -249,6 +293,136 @@ fn apply_chinese_word_segmentation(
         .collect()
 }
 
+fn apply_protected_ranges(
+    opportunities: Vec<LineBreakOpportunity>,
+    protected_ranges: &[Range<usize>],
+) -> Vec<LineBreakOpportunity> {
+    if protected_ranges.is_empty() {
+        return opportunities;
+    }
+    opportunities
+        .into_iter()
+        .filter(|o| {
+            o.is_mandatory
+                || !protected_ranges
+                    .iter()
+                    .any(|r| o.offset > r.start && o.offset < r.end)
+        })
+        .collect()
+}
+
+/// Byte ranges of every occurrence of the protected words.
+fn protected_word_ranges(text: &str, words: &[String]) -> Vec<Range<usize>> {
+    let mut out = Vec::new();
+    for word in words {
+        let mut from = 0;
+        while let Some(pos) = text[from..].find(word.as_str()) {
+            let start = from + pos;
+            out.push(start..start + word.len());
+            from = start + word.len();
+        }
+    }
+    out
+}
+
+fn contains_thai(text: &str) -> bool {
+    text.chars().any(|c| ('\u{0E00}'..='\u{0E7F}').contains(&c))
+}
+
+/// Thai sentence-final particles that read wrong at the start of a line.
+const THAI_PARTICLES: &[&str] = &[
+    "ครับ",
+    "คับ",
+    "ค่ะ",
+    "คะ",
+    "ค่า",
+    "ขา",
+    "จ้ะ",
+    "จ้า",
+    "จ๊ะ",
+    "นะ",
+    "น่ะ",
+    "น้า",
+    "ล่ะ",
+    "ละ",
+    "สิ",
+    "ซิ",
+    "เถอะ",
+    "เหรอ",
+    "หรอ",
+    "หรอก",
+    "ซะ",
+    "เนอะ",
+    "ไง",
+    "เลย",
+    "ด้วย",
+    "มั้ย",
+    "ไหม",
+    "หรือ",
+    "แหละ",
+    "เอง",
+    "จ๋า",
+    "ฮะ",
+    "งะ",
+    "อะ",
+];
+
+/// Characters that must stay with the text before them.
+fn is_trailing_mark(c: char) -> bool {
+    matches!(
+        c,
+        'ๆ' | 'ฯ'
+            | '!'
+            | '?'
+            | '！'
+            | '？'
+            | '…'
+            | '.'
+            | ','
+            | '、'
+            | '。'
+            | '」'
+            | '』'
+            | ')'
+            | '）'
+            | '"'
+            | '”'
+            | '~'
+            | '～'
+    )
+}
+
+/// Drop break opportunities that would start a line with a Thai particle,
+/// a repetition mark (ๆ) or closing punctuation.
+fn glue_thai(text: &str, opportunities: Vec<LineBreakOpportunity>) -> Vec<LineBreakOpportunity> {
+    let breaks: std::collections::HashSet<usize> = opportunities.iter().map(|o| o.offset).collect();
+    opportunities
+        .into_iter()
+        .filter(|o| {
+            if o.is_mandatory || o.offset == 0 || o.offset >= text.len() {
+                return true;
+            }
+            let rest = &text[o.offset..];
+            if rest.chars().next().is_some_and(is_trailing_mark) {
+                return false;
+            }
+            // A particle that is a whole word here (it ends at a break,
+            // a space, punctuation or the end of the text).
+            !THAI_PARTICLES.iter().any(|p| {
+                rest.starts_with(p) && {
+                    let end = o.offset + p.len();
+                    end == text.len()
+                        || breaks.contains(&end)
+                        || text[end..]
+                            .chars()
+                            .next()
+                            .is_some_and(|c| c.is_whitespace() || is_trailing_mark(c))
+                }
+            })
+        })
+        .collect()
+}
+
 fn chinese_word_ranges(text: &str) -> Vec<Range<usize>> {
     let mut offset = 0usize;
     JIEBA
@@ -317,6 +491,47 @@ fn hyphenatable_word_bounds(text: &str) -> Option<(usize, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn thai_segments(breaker: &LineBreaker, text: &str) -> Vec<String> {
+        breaker
+            .line_break_opportunities(text)
+            .windows(2)
+            .map(|w| text[w[0].offset..w[1].offset].to_string())
+            .collect()
+    }
+
+    #[test]
+    fn thai_particles_and_marks_stay_with_the_word_before() {
+        let breaker = LineBreaker::new();
+        for seg in thai_segments(&breaker, "ไปกันเถอะนะ มากๆ เลย!")
+        {
+            for start in ["นะ", "ๆ", "!"] {
+                assert!(
+                    !seg.starts_with(start),
+                    "segment {seg:?} starts with {start}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn protected_words_are_never_split() {
+        let text = "รุรุเอะมาแล้ว";
+        let breaker = LineBreaker::new().with_protected_words(&["รุรุเอะ".to_string()]);
+        let segs = thai_segments(&breaker, text);
+        assert!(segs.iter().any(|s| s.starts_with("รุรุเอะ")), "{segs:?}");
+    }
+
+    #[test]
+    fn both_thai_modes_find_word_breaks() {
+        for mode in [ThaiWordBreaking::Dictionary, ThaiWordBreaking::Lstm] {
+            let segs = thai_segments(
+                &LineBreaker::with_thai_word_breaking(mode),
+                "สวัสดีครับวันนี้อากาศดี",
+            );
+            assert!(segs.len() > 1, "{mode:?}: {segs:?}");
+        }
+    }
 
     #[test]
     fn break_on_whitespace() {

@@ -6,7 +6,10 @@ use std::sync::Arc;
 
 use crate::Language;
 
-use super::chat_completions::{ChatCompletionsAuth, ChatCompletionsRequest, send_chat_completion};
+use super::chat_completions::{
+    ChatCompletionsAuth, ChatCompletionsRequest, VisionRequest, send_chat_completion,
+    send_vision_completion,
+};
 use super::{AnyProvider, ensure_provider_success, resolve_system_prompt};
 
 #[derive(Debug, Clone)]
@@ -90,7 +93,37 @@ impl AnyProvider for OpenAiCompatibleProvider {
                     system_prompt: prompt,
                     user_prompt: source.to_string(),
                     temperature: self.temperature,
-                    max_tokens: self.max_tokens,
+                    // Without a limit a local model stuck repeating a sound
+                    // generates until its context is full.
+                    max_tokens: self.max_tokens.or(Some(default_max_tokens(source))),
+                },
+            )
+            .await
+        })
+    }
+
+    fn read_image<'a>(
+        &'a self,
+        png: &'a [u8],
+        instructions: &'a str,
+        model: &'a str,
+    ) -> Pin<Box<dyn Future<Output = anyhow::Result<String>> + Send + 'a>> {
+        Box::pin(async move {
+            send_vision_completion(
+                Arc::clone(&self.http_client),
+                VisionRequest {
+                    provider: "openai-compatible",
+                    endpoint: format!("{}/chat/completions", normalized_base_url(&self.base_url)?),
+                    auth: self
+                        .api_key
+                        .as_deref()
+                        .filter(|value| !value.trim().is_empty())
+                        .map(|key| ChatCompletionsAuth::Bearer(key.to_string()))
+                        .unwrap_or(ChatCompletionsAuth::None),
+                    model: model.to_string(),
+                    instructions: instructions.to_string(),
+                    png: png.to_vec(),
+                    max_tokens: 2048,
                 },
             )
             .await
@@ -98,9 +131,24 @@ impl AnyProvider for OpenAiCompatibleProvider {
     }
 }
 
+/// Output budget when none is configured: generous for a translation of
+/// `source` (Thai and other scripts take several tokens per source
+/// character) yet small enough to stop a looping model quickly.
+fn default_max_tokens(source: &str) -> u32 {
+    let chars = source.chars().count() as u32;
+    chars.saturating_mul(4).saturating_add(1024).min(8192)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::normalized_base_url;
+    use super::{default_max_tokens, normalized_base_url};
+
+    #[test]
+    fn output_budget_grows_with_the_source_and_is_capped() {
+        assert_eq!(default_max_tokens(""), 1024);
+        assert_eq!(default_max_tokens(&"あ".repeat(100)), 1424);
+        assert_eq!(default_max_tokens(&"あ".repeat(100_000)), 8192);
+    }
 
     #[test]
     fn trims_trailing_slashes() {

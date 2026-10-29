@@ -39,8 +39,10 @@ import { usePointerToDocument } from '@/hooks/usePointerToDocument'
 import { useRenderBrushDrawing } from '@/hooks/useRenderBrushDrawing'
 import type { Node, Transform } from '@/lib/api/schemas'
 import { applyOp } from '@/lib/io/scene'
+import { ocrBlocks } from '@/lib/ocrBlocks'
 import { ops } from '@/lib/ops'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
+import { useJobsStore } from '@/lib/stores/jobsStore'
 import { useSelectionStore } from '@/lib/stores/selectionStore'
 
 const BRUSH_CURSOR = 'none'
@@ -58,6 +60,9 @@ export function Workspace() {
   useKeyboardShortcuts()
 
   const scale = useEditorUiStore((s) => s.scale)
+  const ocrRunning = useJobsStore((s) =>
+    Object.values(s.jobs).some((j) => j.status === 'running'),
+  )
   const showSegmentationMask = useEditorUiStore((s) => s.showSegmentationMask)
   const showInpaintedImage = useEditorUiStore((s) => s.showInpaintedImage)
   const showBrushLayer = useEditorUiStore((s) => s.showBrushLayer)
@@ -401,6 +406,24 @@ export function Workspace() {
                   </div>
                 </ContextMenuTrigger>
                 <ContextMenuContent className='min-w-32'>
+                  <ContextMenuItem
+                    data-testid='workspace-ocr-block'
+                    disabled={contextMenuNodeId === null || ocrRunning}
+                    onSelect={() => {
+                      if (!page || contextMenuNodeId === null) return
+                      // Every selected block when the clicked one is among
+                      // them, else just the clicked one.
+                      const selected = useSelectionStore.getState().nodeIds
+                      const ids = selected.has(contextMenuNodeId)
+                        ? [...selected]
+                        : [contextMenuNodeId]
+                      ocrBlocks(page.id, ids).catch((err) =>
+                        useEditorUiStore.getState().showError(String(err)),
+                      )
+                    }}
+                  >
+                    {t('workspace.ocrBlock')}
+                  </ContextMenuItem>
                   <ContextMenuItem
                     disabled={contextMenuNodeId === null}
                     onSelect={handleDeleteBlock}

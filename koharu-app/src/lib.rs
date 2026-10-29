@@ -3,20 +3,32 @@
 //!
 //! See [`crate::app::App`] for the entry point.
 
+// `#[async_trait]` expands to `#[must_use]` fns returning a boxed future,
+// which clippy >= 1.99 flags as `double_must_use`.
+#![allow(clippy::double_must_use)]
+
 pub mod ai;
 pub mod app;
 pub mod archive;
 pub mod autosave;
 pub mod blobs;
 pub mod bus;
+pub mod characters;
 pub mod config;
+pub mod glossary;
+pub mod glossary_suggest;
 pub mod google_fonts;
 pub mod history;
+pub mod library;
 pub mod llm;
+pub mod page_import;
 pub mod pipeline;
 pub mod projects;
 pub mod renderer;
 pub mod session;
+pub mod speaker_guess;
+pub mod speech_cues;
+pub mod typesetting;
 pub mod utils;
 
 pub use ai::AiManager;

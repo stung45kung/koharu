@@ -38,6 +38,16 @@ pub fn load_source_image(scene: &Scene, page: PageId, blobs: &BlobStore) -> Resu
     blobs.load_image(&img_data.blob)
 }
 
+/// The page's text segmentation mask (greyscale), if it has one.
+pub fn segment_mask(
+    ctx: &crate::pipeline::engine::EngineCtx<'_>,
+) -> Result<Option<image::GrayImage>> {
+    let Some((_, blob)) = find_mask_node(ctx.scene, ctx.page, MaskRole::Segment) else {
+        return Ok(None);
+    };
+    Ok(Some(ctx.blobs.load_image(&blob)?.to_luma8()))
+}
+
 /// Find a node of `Image { role }` on `page`, if any.
 pub fn find_image_node(scene: &Scene, page: PageId, role: ImageRole) -> Option<(NodeId, BlobRef)> {
     let page = scene.page(page)?;
@@ -69,6 +79,21 @@ pub fn text_nodes(scene: &Scene, page: PageId) -> Vec<(NodeId, &Transform, &Text
             _ => None,
         })
         .collect()
+}
+
+/// Text nodes a step works on: those named in the run's `text_node_ids`
+/// (e.g. re-reading one block after moving it), else every text node.
+pub fn target_text_nodes<'a>(
+    ctx: &crate::pipeline::engine::EngineCtx<'a>,
+) -> Vec<(NodeId, &'a Transform, &'a TextData)> {
+    let all = text_nodes(ctx.scene, ctx.page);
+    match ctx.options.text_node_ids.as_deref() {
+        Some(ids) if !ids.is_empty() => all
+            .into_iter()
+            .filter(|(id, _, _)| ids.contains(id))
+            .collect(),
+        _ => all,
+    }
 }
 
 /// Convert a scene `(Transform, TextData)` pair into a `koharu-ml` `TextRegion`

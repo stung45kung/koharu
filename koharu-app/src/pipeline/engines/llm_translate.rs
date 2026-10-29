@@ -4,7 +4,11 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use koharu_core::{NodeDataPatch, NodeId, NodePatch, Op, PageId, Scene, TextData, TextDataPatch};
+use koharu_core::{
+    CharacterBook, NodeDataPatch, NodeId, NodePatch, Op, PageId, Scene, TextData, TextDataPatch,
+};
+use koharu_llm::Language;
+use koharu_llm::prompt::system_prompt_intro;
 
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
@@ -21,17 +25,45 @@ impl Engine for Model {
         }
 
         let sources: Vec<String> = targets.iter().map(|(_, s)| s.clone()).collect();
+        // Tag `[i + 1]` is `targets[i]`, so the speaker map is built from the
+        // exact nodes being sent (works for single-block and reordered runs).
+        let node_ids: Vec<NodeId> = targets.iter().map(|(id, _)| *id).collect();
+        let sections: Vec<String> = [
+            ctx.session.glossary().prompt_section(&sources),
+            ctx.characters.speaker_prompt_section(&node_ids),
+            previous_page_context(ctx.scene, ctx.page, ctx.characters),
+            revision_section(
+                ctx.scene,
+                ctx.page,
+                &node_ids,
+                ctx.options.instruction.as_deref(),
+            ),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        let system_prompt = effective_system_prompt(
+            ctx.options.system_prompt.as_deref(),
+            ctx.options.target_language.as_deref(),
+            &sections,
+        );
         let translations = ctx
             .llm
             .translate_texts(
                 &sources,
                 ctx.options.target_language.as_deref(),
-                ctx.options.system_prompt.as_deref(),
+                system_prompt.as_deref(),
             )
             .await?;
 
         let mut ops = Vec::with_capacity(targets.len());
         for ((node_id, _), translation) in targets.into_iter().zip(translations) {
+            // A block the model skipped comes back empty; keep whatever
+            // translation the block already had instead of wiping it.
+            if translation.trim().is_empty() {
+                tracing::warn!(node = %node_id, "LLM returned no translation for block; keeping existing text");
+                continue;
+            }
             ops.push(Op::UpdateNode {
                 page: ctx.page,
                 id: node_id,
@@ -47,6 +79,140 @@ impl Engine for Model {
             });
         }
         Ok(ops)
+    }
+}
+
+/// System prompt to send. Without extra sections this is exactly the user's
+/// custom prompt (or `None` → provider default), i.e. unchanged behaviour.
+/// Extra sections (speakers, previous-page context, ...) are appended to the
+/// custom prompt, or to the default instructions when no custom prompt is
+/// set. Block-tag rules are appended later by every LLM path, so they are not
+/// repeated here.
+fn effective_system_prompt(
+    custom: Option<&str>,
+    target_language: Option<&str>,
+    sections: &[String],
+) -> Option<String> {
+    let custom = custom.filter(|p| !p.trim().is_empty());
+    if sections.is_empty() {
+        return custom.map(str::to_string);
+    }
+    let section = sections.join("\n\n");
+    let base = match custom {
+        Some(p) => p.trim_end().to_string(),
+        None => {
+            let lang = target_language
+                .and_then(Language::parse)
+                .unwrap_or(Language::English);
+            system_prompt_intro(lang)
+        }
+    };
+    Some(format!("{base}\n\n{section}"))
+}
+
+/// The user's re-translation request plus the current translations of the
+/// blocks being sent, so the model revises them instead of starting over.
+fn revision_section(
+    scene: &Scene,
+    page: PageId,
+    node_ids: &[NodeId],
+    instruction: Option<&str>,
+) -> Option<String> {
+    let instruction = one_line(instruction?.trim());
+    if instruction.is_empty() {
+        return None;
+    }
+    let current: std::collections::HashMap<NodeId, String> = text_nodes(scene, page)
+        .into_iter()
+        .filter_map(|(id, _, t)| {
+            let tr = t.translation.as_deref()?.trim();
+            (!tr.is_empty()).then(|| (id, one_line(tr)))
+        })
+        .collect();
+    let lines: Vec<String> = node_ids
+        .iter()
+        .enumerate()
+        .map(|(i, id)| match current.get(id) {
+            Some(tr) => format!("[{}] {tr}", i + 1),
+            None => format!("[{}] (no translation yet)", i + 1),
+        })
+        .collect();
+    Some(format!(
+        "Revision request: these blocks were already translated and the user asked for a \
+         new version. Current translations:\n{}\n\
+         User's request for the new translation: {instruction}\n\
+         Follow the request, keep the meaning of the source text, and keep everything the \
+         request does not mention (names, glossary terms, the speaker's voice) as it is. \
+         Output only the new translations in the usual block format.",
+        lines.join("\n")
+    ))
+}
+
+/// Lines of the previous page sent as context.
+const CONTEXT_LINES: usize = 10;
+/// Max characters of each source / translation line in the context.
+const CONTEXT_LINE_CHARS: usize = 160;
+
+/// The end of the previous page (speaker, source, translation) so the model
+/// keeps names, terms, tone and running sentences consistent across pages.
+/// Pipelines process pages in order, so in a multi-page run the previous
+/// page is already translated when this page's turn comes.
+fn previous_page_context(scene: &Scene, page: PageId, book: &CharacterBook) -> Option<String> {
+    let index = scene.pages.get_index_of(&page)?;
+    let (prev_id, _) = scene.pages.get_index(index.checked_sub(1)?)?;
+    let lines: Vec<String> = text_nodes(scene, *prev_id)
+        .into_iter()
+        .filter_map(|(id, _, t)| {
+            let source = t.text.as_deref()?.trim();
+            if source.is_empty() {
+                return None;
+            }
+            let speaker = book
+                .speaker_of(id)
+                .map(|c| one_line(&c.name))
+                .unwrap_or_else(|| {
+                    if book.is_other(id) {
+                        "minor character"
+                    } else {
+                        "?"
+                    }
+                    .to_string()
+                });
+            let translation = t
+                .translation
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| clip(s, CONTEXT_LINE_CHARS))
+                .unwrap_or_else(|| "(not translated yet)".to_string());
+            Some(format!(
+                "- {speaker}: {} => {translation}",
+                clip(source, CONTEXT_LINE_CHARS)
+            ))
+        })
+        .collect();
+    if lines.is_empty() {
+        return None;
+    }
+    let skip = lines.len().saturating_sub(CONTEXT_LINES);
+    Some(format!(
+        "Context: the end of the previous page as `speaker: source => translation`. \
+         It is for continuity only: do not translate it again and do not include it in \
+         the output. Keep names, terms, each speaker's voice, and sentences that continue \
+         from it consistent with these translations.\n{}",
+        lines[skip..].join("\n")
+    ))
+}
+
+fn one_line(s: &str) -> String {
+    s.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn clip(s: &str, max: usize) -> String {
+    let flat = one_line(s);
+    match flat.char_indices().nth(max) {
+        Some((idx, _)) => format!("{}…", &flat[..idx]),
+        None => flat,
     }
 }
 
@@ -82,7 +248,9 @@ inventory::submit! {
     EngineInfo {
         id: "llm",
         name: "LLM",
-        needs: &[Artifact::OcrText],
+        // `Speakers` only orders `speaker-guess` (when selected) before
+        // translation so the guessed speakers reach the prompt.
+        needs: &[Artifact::OcrText, Artifact::Speakers],
         produces: &[Artifact::Translations],
         load: |_runtime, _cpu| Box::pin(async move {
             Ok(Box::new(Model) as Box<dyn Engine>)
@@ -92,6 +260,28 @@ inventory::submit! {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn revision_section_lists_current_translations_and_the_request() {
+        let a = node_id(51);
+        let b = node_id(52);
+        let mut scene = scene_with_texts(vec![
+            text_node(a, Some("src a")),
+            text_node(b, Some("src b")),
+        ]);
+        if let Some(page) = scene.pages.get_mut(&page_id())
+            && let Some(node) = page.nodes.get_mut(&a)
+            && let koharu_core::NodeKind::Text(t) = &mut node.kind
+        {
+            t.translation = Some("แปลเดิม".into());
+        }
+        let section = revision_section(&scene, page_id(), &[a, b], Some("  สุภาพกว่านี้ ")).unwrap();
+        assert!(section.contains("[1] แปลเดิม"));
+        assert!(section.contains("[2] (no translation yet)"));
+        assert!(section.contains("User's request for the new translation: สุภาพกว่านี้"));
+        assert!(revision_section(&scene, page_id(), &[a], Some("   ")).is_none());
+        assert!(revision_section(&scene, page_id(), &[a], None).is_none());
+    }
     use koharu_core::{Node, NodeKind, Page, PageId, Scene, TextData, Transform};
     use uuid::Uuid;
 
@@ -144,6 +334,118 @@ mod tests {
             collect_translation_targets_from(&scene, page_id(), options.text_node_ids.as_deref());
 
         assert_eq!(targets, vec![(second, "second".to_string())]);
+    }
+
+    #[test]
+    fn prompt_is_unchanged_without_speakers() {
+        assert_eq!(effective_system_prompt(None, Some("th-TH"), &[]), None);
+        assert_eq!(
+            effective_system_prompt(Some("แปลเป็นไทย"), None, &[]).as_deref(),
+            Some("แปลเป็นไทย")
+        );
+        assert_eq!(effective_system_prompt(Some("   "), None, &[]), None);
+    }
+
+    #[test]
+    fn speaker_section_is_appended_to_custom_prompt() {
+        let out =
+            effective_system_prompt(Some("แปลเป็นไทย  "), None, &["SPEAKERS".to_string()]).unwrap();
+        assert_eq!(out, "แปลเป็นไทย\n\nSPEAKERS");
+    }
+
+    #[test]
+    fn speaker_section_uses_default_intro_without_custom_prompt() {
+        let out = effective_system_prompt(None, Some("en-US"), &["SPEAKERS".to_string()]).unwrap();
+        assert!(out.starts_with("You are a professional manga translator."));
+        assert!(out.ends_with("\n\nSPEAKERS"));
+        // Tag rules are appended by the LLM layer; don't duplicate them.
+        assert!(!out.contains("[1], [2]"));
+    }
+
+    #[test]
+    fn previous_page_context_carries_source_translation_and_speaker() {
+        use koharu_core::{Character, CharacterBook, CharacterId};
+
+        let (a, b) = (node_id(1), node_id(2));
+        let mut first = Page::new("p1", 100, 100);
+        first.id = PageId(Uuid::from_u128(1));
+        for (id, text, tl) in [(a, "海だー!", Some("ทะเลแล้ว!")), (b, "元気だね", None)]
+        {
+            first.nodes.insert(
+                id,
+                Node {
+                    id,
+                    transform: Transform::default(),
+                    visible: true,
+                    kind: NodeKind::Text(TextData {
+                        text: Some(text.to_string()),
+                        translation: tl.map(str::to_string),
+                        ..Default::default()
+                    }),
+                },
+            );
+        }
+        let mut second = Page::new("p2", 100, 100);
+        second.id = PageId(Uuid::from_u128(2));
+        let mut scene = Scene::default();
+        scene.pages.insert(first.id, first);
+        scene.pages.insert(second.id, second);
+
+        let mut book = CharacterBook::default();
+        let sui = CharacterId(Uuid::from_u128(7));
+        book.set_characters(vec![Character {
+            id: sui,
+            name: "Sui".into(),
+            description: String::new(),
+            ..Default::default()
+        }]);
+        book.assign(&[a], Some(sui)).unwrap();
+
+        let ctx = previous_page_context(&scene, PageId(Uuid::from_u128(2)), &book).unwrap();
+        assert!(ctx.contains("- Sui: 海だー! => ทะเลแล้ว!"));
+        assert!(ctx.contains("- ?: 元気だね => (not translated yet)"));
+        // First page has no previous page.
+        assert!(previous_page_context(&scene, PageId(Uuid::from_u128(1)), &book).is_none());
+    }
+
+    #[test]
+    fn several_sections_are_appended_in_order() {
+        let out = effective_system_prompt(
+            Some("แปลเป็นไทย"),
+            None,
+            &["SPEAKERS".to_string(), "CONTEXT".to_string()],
+        )
+        .unwrap();
+        assert_eq!(out, "แปลเป็นไทย\n\nSPEAKERS\n\nCONTEXT");
+    }
+
+    #[test]
+    fn speaker_tags_follow_translation_targets() {
+        use koharu_core::{Character, CharacterBook, CharacterId};
+
+        let (a, b, c) = (node_id(1), node_id(2), node_id(3));
+        let scene = scene_with_texts(vec![
+            text_node(a, Some("我が家の近くで")),
+            text_node(b, Some("")),
+            text_node(c, Some("こんな僻地で")),
+        ]);
+        let mut book = CharacterBook::default();
+        let hood = CharacterId(Uuid::from_u128(500));
+        book.set_characters(vec![Character {
+            id: hood,
+            name: "Hood".into(),
+            description: "archaic".into(),
+            ..Default::default()
+        }]);
+        book.assign(&[c], Some(hood)).unwrap();
+
+        // Block b has no OCR text, so c is sent as tag [2].
+        let targets = collect_translation_targets_from(&scene, page_id(), None);
+        let ids: Vec<NodeId> = targets.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, vec![a, c]);
+        let section = book.speaker_prompt_section(&ids).unwrap();
+        assert!(section.contains("[1] unknown speaker"));
+        assert!(section.contains("[2] S1"));
     }
 
     #[test]

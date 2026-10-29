@@ -141,12 +141,28 @@ async fn create_pages(
     // tokio runtime while decoding.
     let blobs = session.blobs.clone();
     let decoded: Vec<(String, u32, u32, BlobRef)> = tokio::task::spawn_blocking(move || {
+        // ZIP/CBZ, RAR/CBR and PDF uploads expand into their pages, in order.
+        let files = files
+            .into_par_iter()
+            .map(|(name, bytes)| {
+                koharu_app::page_import::expand_bytes(&name, bytes)
+                    .map_err(|e| ApiError::bad_request(format!("{e:#}")))
+            })
+            .collect::<ApiResult<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .map(|p| (p.name, p.bytes))
+            .collect::<Vec<_>>();
         files
             .into_par_iter()
             .map(
                 |(filename, bytes)| -> ApiResult<(String, u32, u32, BlobRef)> {
-                    let img = image::load_from_memory(&bytes)
-                        .map_err(|e| ApiError::bad_request(format!("decode `{filename}`: {e}")))?;
+                    // Pages tagged with a non-sRGB colour profile are stored
+                    // converted, so renders keep the original's colours.
+                    let (bytes, img) =
+                        koharu_app::page_import::decode_page(bytes).map_err(|e| {
+                            ApiError::bad_request(format!("decode `{filename}`: {e:#}"))
+                        })?;
                     let (w, h) = img.dimensions();
                     let blob = blobs.put_bytes(&bytes).map_err(ApiError::internal)?;
                     Ok((filename, w, h, blob))
@@ -270,18 +286,23 @@ async fn create_pages_from_paths(
 
     let blobs = session.blobs.clone();
     let decoded: Vec<(String, u32, u32, BlobRef)> = tokio::task::spawn_blocking(move || {
-        paths
+        // ZIP/CBZ, RAR/CBR and PDF files expand into their pages, in order.
+        let files = paths
             .into_par_iter()
-            .map(|path| -> ApiResult<(String, u32, u32, BlobRef)> {
-                let filename = std::path::Path::new(&path)
-                    .file_name()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s.to_string())
-                    .unwrap_or_else(|| "page.bin".to_string());
-                let bytes = std::fs::read(&path)
-                    .map_err(|e| ApiError::bad_request(format!("read `{filename}`: {e}")))?;
-                let img = image::load_from_memory(&bytes)
-                    .map_err(|e| ApiError::bad_request(format!("decode `{filename}`: {e}")))?;
+            .map(|path| {
+                koharu_app::page_import::expand_path(std::path::Path::new(&path))
+                    .map_err(|e| ApiError::bad_request(format!("{e:#}")))
+            })
+            .collect::<ApiResult<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        files
+            .into_par_iter()
+            .map(|page| -> ApiResult<(String, u32, u32, BlobRef)> {
+                let filename = page.name;
+                let (bytes, img) = koharu_app::page_import::decode_page(page.bytes)
+                    .map_err(|e| ApiError::bad_request(format!("decode `{filename}`: {e:#}")))?;
                 let (w, h) = img.dimensions();
                 let blob = blobs.put_bytes(&bytes).map_err(ApiError::internal)?;
                 Ok((filename, w, h, blob))
@@ -550,6 +571,8 @@ async fn put_mask(
             region: Some(region),
             ..Default::default()
         };
+        let characters = session.characters();
+        let typesetting = session.typesetting();
         let ctx = EngineCtx {
             scene: &scene,
             page: page_id,
@@ -559,6 +582,9 @@ async fn put_mask(
             options: &options,
             llm: &app.llm,
             renderer: &app.renderer,
+            characters: &characters,
+            typesetting: &typesetting,
+            session: &session,
         };
 
         // 3. Run Engine (Synchronously for this request)

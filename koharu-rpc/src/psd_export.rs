@@ -43,6 +43,8 @@ pub fn psd_bytes_for_page(
         .get(&page_id)
         .ok_or_else(|| anyhow::anyhow!("page {page_id} not found"))?;
     let project_default_font = scene.project.style.default_font.clone();
+    let characters = session.characters();
+    let typesetting = session.typesetting();
     let ResolvedPage {
         doc,
         source,
@@ -56,6 +58,8 @@ pub fn psd_bytes_for_page(
         renderer,
         default_font_override,
         project_default_font,
+        &characters,
+        &typesetting,
         page,
     )
     .with_context(|| format!("page {page_id}"))?;
@@ -79,6 +83,8 @@ fn resolve_page_blobs(
     renderer: &koharu_app::renderer::Renderer,
     default_font_override: Option<String>,
     project_default_font: Option<String>,
+    characters: &koharu_core::CharacterBook,
+    typesetting: &koharu_core::TypesettingDefaults,
     page: &koharu_core::Page,
 ) -> Result<ResolvedPage> {
     let mut source: Option<DynamicImage> = None;
@@ -124,8 +130,10 @@ fn resolve_page_blobs(
                     block_images.insert(blob_ref_to_psd(sprite), decoded);
                 }
 
+                let speaker = characters.speaker_of(*node_id);
                 let style = resolve_export_font_style(
                     text,
+                    speaker.and_then(|c| c.font.as_deref()),
                     &project_default_font,
                     default_font_override.as_deref(),
                 );
@@ -146,12 +154,25 @@ fn resolve_page_blobs(
                     idx
                 });
 
-                text_blocks.push(text_to_psd(
-                    node_id,
-                    &node.transform,
-                    text,
-                    Some(font_index),
+                let mut block = text_to_psd(node_id, &node.transform, text, Some(font_index));
+                // Same colour the rendered sprite got, so the editable text
+                // in Photoshop matches it (speaker / project colours too).
+                block.text_color = Some(koharu_app::renderer::resolve_text_color(
+                    text.style.as_ref(),
+                    text.style.as_ref().unwrap_or(&TextStyle::default()),
+                    text.font_prediction.as_ref(),
+                    speaker.and_then(|c| c.color),
+                    typesetting.color,
                 ));
+                apply_speaker_typesetting(
+                    &mut block,
+                    speaker,
+                    typesetting.font_size_for_page(page.height),
+                    speaker.and_then(|c| {
+                        typesetting.scale_size_for_page(c.font_size_px?, page.height)
+                    }),
+                );
+                text_blocks.push(block);
             }
         }
     }
@@ -196,20 +217,82 @@ pub fn png_bytes_for_page(
         return Ok(None);
     };
     let image = session.blobs.load_image(&blob_ref)?;
+    Ok(Some(encode_srgb_png(&image)?))
+}
+
+/// PNG with the sRGB profile embedded, so Photoshop and other
+/// colour-managed apps show the original colours whatever their working
+/// space.
+pub fn encode_srgb_png(image: &DynamicImage) -> Result<Vec<u8>> {
+    use image::ImageEncoder as _;
     let mut buf: Vec<u8> = Vec::new();
-    image
-        .write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+    let mut encoder = image::codecs::png::PngEncoder::new(&mut buf);
+    encoder
+        .set_icc_profile(koharu_psd::SRGB_ICC.to_vec())
         .map_err(anyhow::Error::new)?;
-    Ok(Some(buf))
+    let image = match image {
+        DynamicImage::ImageRgb8(_) | DynamicImage::ImageRgba8(_) => image.clone(),
+        other if other.color().has_alpha() => DynamicImage::ImageRgba8(other.to_rgba8()),
+        other => DynamicImage::ImageRgb8(other.to_rgb8()),
+    };
+    encoder
+        .write_image(
+            image.as_bytes(),
+            image.width(),
+            image.height(),
+            image.color().into(),
+        )
+        .map_err(anyhow::Error::new)?;
+    Ok(buf)
+}
+
+/// Fill the editable text's size / bold / italic / alignment from the
+/// speaker (then the project default size) where the block sets none,
+/// mirroring the renderer.
+fn apply_speaker_typesetting(
+    block: &mut PsdTextBlock,
+    speaker: Option<&koharu_core::Character>,
+    project_size: Option<f32>,
+    speaker_size: Option<f32>,
+) {
+    let size = speaker_size.or(project_size);
+    let effect = speaker.and_then(|c| c.effect());
+    let align = speaker.and_then(|c| c.text_align);
+    if size.is_none() && effect.is_none() && align.is_none() {
+        return;
+    }
+    let color = block.text_color.unwrap_or([0, 0, 0, 255]);
+    let style = block.style.get_or_insert_with(|| PsdTextStyle {
+        font_families: Vec::new(),
+        font_size: None,
+        color,
+        effect: None,
+        text_align: None,
+    });
+    if style.font_size.is_none() {
+        style.font_size = size;
+    }
+    if style.effect.is_none() {
+        style.effect = effect.map(|e| PsdShaderEffect {
+            italic: e.italic,
+            bold: e.bold,
+        });
+    }
+    if style.text_align.is_none() {
+        style.text_align = align.map(convert_align);
+    }
 }
 
 fn resolve_export_font_style(
     text: &TextData,
+    speaker_font: Option<&str>,
     project_default: &Option<String>,
     ui_override: Option<&str>,
 ) -> TextStyle {
     let mut style = text.style.clone().unwrap_or_default();
-    let default_font = ui_override
+    let default_font = speaker_font
+        .filter(|f| !f.trim().is_empty())
+        .or(ui_override)
         .map(|s| s.to_string())
         .or_else(|| project_default.clone());
 
@@ -249,6 +332,22 @@ fn text_to_psd(
         _ => transform,
     };
 
+    // A block the user rotated: the sprite is already rotated (and its
+    // bounds expanded), so the editable text gets an upright box of the
+    // block's size centred on the sprite, plus the user's angle.
+    let user_rotation = transform.rotation_deg;
+    let (rotation_deg, text_box) = if user_rotation.abs() > 0.01 && user_rotation.is_finite() {
+        let cx = layer_transform.x + layer_transform.width / 2.0;
+        let cy = layer_transform.y + layer_transform.height / 2.0;
+        let (w, h) = (transform.width.max(1.0), transform.height.max(1.0));
+        (
+            Some(user_rotation + text.rotation_deg.unwrap_or(0.0)),
+            Some([cx - w / 2.0, cy - h / 2.0, w, h]),
+        )
+    } else {
+        (text.rotation_deg, None)
+    };
+
     PsdTextBlock {
         id: node_id.to_string(),
         x: layer_transform.x,
@@ -258,7 +357,9 @@ fn text_to_psd(
         translation: text.translation.clone(),
         style: text.style.as_ref().map(convert_style),
         rendered: text.sprite.as_ref().map(blob_ref_to_psd),
-        rotation_deg: text.rotation_deg,
+        rotation_deg,
+        text_box,
+        text_color: None,
         font_prediction: text.font_prediction.as_ref().map(convert_prediction),
         source_direction: text.source_direction.map(convert_dir),
         rendered_direction: text.rendered_direction.map(convert_dir),
@@ -319,6 +420,47 @@ mod tests {
     use koharu_core::{BlobRef, NodeId, TextData, Transform};
 
     use super::text_to_psd;
+
+    #[test]
+    fn rotated_block_gets_upright_text_box_and_user_angle() {
+        let node_transform = Transform {
+            x: 100.0,
+            y: 100.0,
+            width: 80.0,
+            height: 40.0,
+            rotation_deg: 30.0,
+        };
+        // Rotated sprite bounds (expanded), centred on (140, 120).
+        let sprite_transform = Transform {
+            x: 95.0,
+            y: 83.0,
+            width: 90.0,
+            height: 74.0,
+            rotation_deg: 30.0,
+        };
+        let text = TextData {
+            translation: Some("เอียง".to_string()),
+            sprite: Some(BlobRef::new("sprite")),
+            sprite_transform: Some(sprite_transform),
+            ..Default::default()
+        };
+        let block = text_to_psd(&NodeId::new(), &node_transform, &text, Some(0));
+        // Raster layer keeps the rotated sprite bounds.
+        assert_eq!((block.x, block.y), (95.0, 83.0));
+        assert_eq!(block.rotation_deg, Some(30.0));
+        assert_eq!(block.text_box, Some([100.0, 100.0, 80.0, 40.0]));
+    }
+
+    #[test]
+    fn unrotated_block_has_no_text_box() {
+        let text = TextData {
+            translation: Some("ตรง".to_string()),
+            ..Default::default()
+        };
+        let block = text_to_psd(&NodeId::new(), &Transform::default(), &text, Some(0));
+        assert_eq!(block.text_box, None);
+        assert_eq!(block.rotation_deg, None);
+    }
 
     #[test]
     fn text_to_psd_uses_sprite_transform_for_rendered_text_layer() {

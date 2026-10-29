@@ -13,9 +13,20 @@
 
 import { isTauri } from '@/lib/backend'
 
-const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp'] as const
-const IMAGE_MIME = ['image/png', 'image/jpeg', 'image/webp']
-const IMAGE_RE = /\.(png|jpe?g|webp)$/i
+// Archives (ZIP/CBZ, RAR/CBR) and PDFs are expanded into pages by the
+// backend (`koharu_app::page_import`).
+const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'zip', 'cbz', 'rar', 'cbr', 'pdf'] as const
+const IMAGE_MIME = [
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/zip',
+  'application/x-cbz',
+  'application/vnd.rar',
+  'application/x-cbr',
+  'application/pdf',
+]
+const IMAGE_RE = /\.(png|jpe?g|webp|zip|cbz|rar|cbr|pdf)$/i
 
 /**
  * Platform-tagged picker result. On Tauri we hand paths straight to the
@@ -33,7 +44,7 @@ export async function openImageFiles(): Promise<ImagePickerResult> {
     const { open } = await import('@tauri-apps/plugin-dialog')
     const picked = await open({
       multiple: true,
-      filters: [{ name: 'Images', extensions: [...IMAGE_EXTENSIONS] }],
+      filters: [{ name: 'Images, archives, PDF', extensions: [...IMAGE_EXTENSIONS] }],
     })
     if (!picked) return { kind: 'paths', paths: [] }
     const paths = Array.isArray(picked) ? picked : [picked]
@@ -46,7 +57,7 @@ export async function openImageFiles(): Promise<ImagePickerResult> {
       multiple: true,
       mimeTypes: IMAGE_MIME,
       extensions: IMAGE_EXTENSIONS.map((e) => `.${e}`),
-      description: 'Images',
+      description: 'Images, archives, PDF',
     })
     return { kind: 'files', files: Array.isArray(result) ? result : [result] }
   } catch (e) {
@@ -80,6 +91,34 @@ export async function openImageFolder(): Promise<ImagePickerResult> {
     }
   } catch (e) {
     if (isAbort(e)) return { kind: 'files', files: [] }
+    throw e
+  }
+}
+
+/** Pick one JSON file (e.g. an exported library). `null` if cancelled. */
+export async function openJsonFile(description: string): Promise<File | null> {
+  if (isTauri()) {
+    const { open } = await import('@tauri-apps/plugin-dialog')
+    const picked = await open({
+      multiple: false,
+      filters: [{ name: description, extensions: ['json'] }],
+    })
+    if (!picked || typeof picked !== 'string') return null
+    const [file] = await readTauriFiles([picked])
+    return file ?? null
+  }
+
+  const { fileOpen } = await import('browser-fs-access')
+  try {
+    const result = await fileOpen({
+      multiple: false,
+      extensions: ['.json'],
+      mimeTypes: ['application/json'],
+      description,
+    })
+    return Array.isArray(result) ? (result[0] ?? null) : result
+  } catch (e) {
+    if (isAbort(e)) return null
     throw e
   }
 }

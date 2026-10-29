@@ -34,6 +34,37 @@ expression: paths
         ],
     ),
     (
+        "/characters",
+        [
+            "get",
+            "put",
+        ],
+    ),
+    (
+        "/characters/confirm",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/characters/guess",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/characters/speakers",
+        [
+            "put",
+        ],
+    ),
+    (
+        "/characters/speech-cues",
+        [
+            "post",
+        ],
+    ),
+    (
         "/config",
         [
             "get",
@@ -73,6 +104,19 @@ expression: paths
         ],
     ),
     (
+        "/glossary",
+        [
+            "get",
+            "put",
+        ],
+    ),
+    (
+        "/glossary/suggest",
+        [
+            "post",
+        ],
+    ),
+    (
         "/google-fonts",
         [
             "get",
@@ -104,6 +148,36 @@ expression: paths
     ),
     (
         "/history/undo",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/library",
+        [
+            "get",
+        ],
+    ),
+    (
+        "/library/apply",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/library/delete",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/library/import",
+        [
+            "post",
+        ],
+    ),
+    (
+        "/library/save",
         [
             "post",
         ],
@@ -224,6 +298,19 @@ expression: paths
         "/scene.json",
         [
             "get",
+        ],
+    ),
+    (
+        "/typesetting",
+        [
+            "get",
+            "put",
+        ],
+    ),
+    (
+        "/typesetting/reset-block-styles",
+        [
+            "post",
         ],
     ),
 ]

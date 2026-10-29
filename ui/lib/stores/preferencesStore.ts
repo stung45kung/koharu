@@ -37,6 +37,8 @@ type PreferencesState = {
   customPipeline: {
     detect: boolean
     ocr: boolean
+    /** LLM speaker guessing between OCR and translation. */
+    speakers: boolean
     translator: boolean
     inpainter: boolean
     renderer: boolean
@@ -68,6 +70,7 @@ const initialPreferences = {
   customPipeline: {
     detect: true,
     ocr: true,
+    speakers: true,
     translator: true,
     inpainter: true,
     renderer: true,
@@ -119,7 +122,7 @@ export const usePreferencesStore = create<PreferencesState>()(
     }),
     {
       name: 'koharu-config',
-      version: 7,
+      version: 8,
       migrate: (persisted: any, version: number) => {
         if (version < 2 && persisted) {
           delete persisted.localLlm
@@ -153,6 +156,9 @@ export const usePreferencesStore = create<PreferencesState>()(
         }
         if (persisted && (version < 7 || persisted.customPipeline?.detect === undefined)) {
           persisted.customPipeline = initialPreferences.customPipeline
+        }
+        if (persisted?.customPipeline && persisted.customPipeline.speakers === undefined) {
+          persisted.customPipeline.speakers = true
         }
         return persisted
       },

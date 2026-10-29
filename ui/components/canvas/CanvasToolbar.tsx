@@ -12,6 +12,7 @@ import { motion } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ConsistencyCheck } from '@/components/canvas/ConsistencyCheck'
 import { Button } from '@/components/ui/button'
 import { LlmModelSelect, type LlmModelOption } from '@/components/ui/llm-model-select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -229,6 +230,8 @@ function WorkflowButtons() {
         )}
         {t('llm.render')}
       </Button>
+      <Separator orientation='vertical' className='mx-0.5 h-4' />
+      <ConsistencyCheck />
     </div>
   )
 }

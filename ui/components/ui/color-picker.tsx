@@ -5,6 +5,7 @@ import { HexColorInput, HexColorPicker } from 'react-colorful'
 
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { useColorPickStore } from '@/lib/colorPick'
 import { cn } from '@/lib/utils'
 
 type ColorPickerProps = {
@@ -20,12 +21,6 @@ type ColorPickerProps = {
   pickButtonTestId?: string
   'aria-label'?: string
   'aria-labelledby'?: string
-}
-
-type EyeDropperWindow = Window & {
-  EyeDropper?: new () => {
-    open: () => Promise<{ sRGBHex: string }>
-  }
 }
 
 const normalizeHex = (value: string) => {
@@ -62,24 +57,14 @@ export function ColorPicker({
     }
   }, [localColor, onChange])
 
-  const canUseEyeDropper =
-    typeof window !== 'undefined' && typeof (window as EyeDropperWindow).EyeDropper === 'function'
-
-  const handlePickFromScreen = async () => {
-    const EyeDropperCtor = (window as EyeDropperWindow).EyeDropper
-    if (!EyeDropperCtor) return
-
-    try {
-      const eyeDropper = new EyeDropperCtor()
-      const result = await eyeDropper.open()
-      const color = normalizeHex(result.sRGBHex)
+  // Pick from the page canvas (the browser EyeDropper API does not work in
+  // the desktop app's WebView).
+  const handlePickFromScreen = () => {
+    useColorPickStore.getState().start((hex) => {
+      const color = normalizeHex(hex)
       setLocalColor(color)
       onChange(color)
-    } catch (error) {
-      const maybeDomException = error as DOMException | undefined
-      if (maybeDomException?.name === 'AbortError') return
-      console.error(error)
-    }
+    })
   }
 
   return (
@@ -132,21 +117,17 @@ export function ColorPicker({
               }}
             />
 
-            {canUseEyeDropper && (
-              <Button
-                type='button'
-                size='sm'
-                variant='outline'
-                data-testid={pickButtonTestId}
-                disabled={disabled}
-                className='h-8 shrink-0 px-2 text-xs'
-                onClick={() => {
-                  void handlePickFromScreen()
-                }}
-              >
-                Pick
-              </Button>
-            )}
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              data-testid={pickButtonTestId}
+              disabled={disabled}
+              className='h-8 shrink-0 px-2 text-xs'
+              onClick={handlePickFromScreen}
+            >
+              Pick
+            </Button>
           </div>
         </div>
       </PopoverContent>

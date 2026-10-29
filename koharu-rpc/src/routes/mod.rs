@@ -3,13 +3,17 @@
 //! `api.rs`.
 
 pub mod ai;
+pub mod characters;
 pub mod config;
 pub mod downloads;
 pub mod fonts;
+pub mod glossary;
 pub mod history;
+pub mod library;
 pub mod llm;
 pub mod meta;
 pub mod operations;
 pub mod pages;
 pub mod pipelines;
 pub mod projects;
+pub mod typesetting;

@@ -248,10 +248,12 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
         .filter_map(|(x1, x2)| {
             let row_inked = |y: u32| (x1..x2).any(|x| inked(mask, x, y));
             let rows: Vec<u32> = (by1..by2).filter(|&y| row_inked(y)).collect();
-            let (mut top, mut bottom) = (*rows.first()?, *rows.last()? + 1);
+            // Longest run of glyphs: other lettering further along the same
+            // strip (a sign in the scene, say) is left out.
+            let max_gap = ((x2 - x1) as f32 * 0.6).ceil() as u32;
+            let (mut top, mut bottom) = longest_run(&rows, max_gap)?;
             // Follow the column past the box while its glyphs continue
             // (allowing the gap between two glyphs).
-            let max_gap = ((x2 - x1) as f32 * 0.6).ceil() as u32;
             let mut gap = 0;
             let mut y = top;
             while y > 0 && gap <= max_gap && top - y < margin as u32 * 2 {
@@ -282,6 +284,26 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
             })
         })
         .collect()
+}
+
+/// `(first, last + 1)` of the run of `rows` (sorted) with the most rows,
+/// where neighbours at most `max_gap` empty rows apart belong to one run.
+fn longest_run(rows: &[u32], max_gap: u32) -> Option<(u32, u32)> {
+    let mut best: Option<(u32, u32, usize)> = None;
+    let mut start = 0;
+    for i in 0..rows.len() {
+        let ends_here = rows
+            .get(i + 1)
+            .is_none_or(|&next| next - rows[i] > max_gap + 1);
+        if ends_here {
+            let count = i + 1 - start;
+            if best.is_none_or(|(_, _, c)| count > c) {
+                best = Some((rows[start], rows[i] + 1, count));
+            }
+            start = i + 1;
+        }
+    }
+    best.map(|(a, b, _)| (a, b))
 }
 
 /// Join the text read from one block's crops.
@@ -476,5 +498,17 @@ mod tests {
         // starts there; each is 30 px of glyph + 2 px of gap + 6 px pad.
         assert_eq!(crops[0].width(), 2 + 30 + 6);
         assert_eq!(crops[1].width(), 6 + 30 + 2);
+    }
+
+    #[test]
+    fn other_lettering_further_down_the_column_is_left_out() {
+        let mut mask = GrayImage::new(200, 400);
+        glyph_column(&mut mask, 20, 20, 30, 5);
+        glyph_column(&mut mask, 60, 20, 30, 3);
+        // A small sign 80 px below the right column, inside the box.
+        paint(&mut mask, 65..85, 210..230);
+        let columns = vertical_columns(&mask, &block(10.0, 10.0, 90.0, 240.0));
+        assert_eq!(columns.len(), 2);
+        assert_eq!((columns[1].top, columns[1].bottom), (20, 20 + 2 * 34 + 30));
     }
 }

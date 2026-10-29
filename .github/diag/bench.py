@@ -50,6 +50,12 @@ def crops(im, m, cols):
         lo = cols[i - 1][1] + (a - cols[i - 1][1]) // 2 if i else 0
         hi = b + (cols[i + 1][0] - b + 1) // 2 if i + 1 < len(cols) else W
         rows = np.where(m[:, a:b].any(1))[0]
+        gap = int(np.ceil((b - a) * 0.6))
+        runs, st = [], 0
+        for k in range(len(rows)):
+            if k + 1 == len(rows) or rows[k + 1] - rows[k] > gap + 1:
+                runs.append(rows[st:k + 1]); st = k + 1
+        rows = max(runs, key=len)
         out.append(im.crop((max(a - pad, lo), max(0, rows[0] - pad), min(b + pad, hi), min(H, rows[-1] + 1 + pad))))
     return out[::-1]
 

@@ -14,7 +14,7 @@ use koharu_llm::paddleocr_vl::{PaddleOcrVl, PaddleOcrVlTask};
 use crate::app::shared_llama_backend;
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
-use crate::pipeline::engines::ocr_columns::{join_columns, ocr_crops};
+use crate::pipeline::engines::ocr_columns::{TextColors, join_columns, ocr_crops};
 use crate::pipeline::engines::support::{
     load_source_image, segment_mask, text_node_to_region, text_nodes,
 };
@@ -31,13 +31,18 @@ impl Engine for Model {
             return Ok(Vec::new());
         }
         let image = load_source_image(ctx.scene, ctx.page, ctx.blobs)?;
+        let rgb = image.to_rgb8();
         let mask = segment_mask(&ctx)?;
         // Vertical blocks are read column by column (see `ocr_columns`).
         let per_block: Vec<Vec<_>> = texts
             .iter()
             .map(|(_, transform, text)| {
                 let region = text_node_to_region(transform, text);
-                ocr_crops(&image, mask.as_ref(), &region)
+                let colors = text.font_prediction.as_ref().map(|p| TextColors {
+                    fill: p.text_color,
+                    outline: (p.stroke_width_px > 0.5).then_some(p.stroke_color),
+                });
+                ocr_crops(&image, &rgb, mask.as_ref(), colors, &region)
             })
             .collect();
         let regions: Vec<_> = per_block.iter().flatten().cloned().collect();

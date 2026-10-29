@@ -9,7 +9,7 @@
 //! block is cut at the gaps between its columns, long columns at the gaps
 //! between glyphs, and the pieces are read right to left, top to bottom.
 
-use image::{DynamicImage, GrayImage};
+use image::{DynamicImage, GrayImage, Luma, RgbImage};
 use koharu_ml::comic_text_detector::crop_text_block_bbox;
 use koharu_ml::types::{TextDirection, TextRegion};
 
@@ -35,18 +35,31 @@ struct Column {
     bottom: u32,
 }
 
-/// Crops to OCR for `block`, in reading order: for a vertical block with
-/// text in `mask`, its columns right to left, long ones cut into chunks;
-/// otherwise the whole block.
+/// Colours of a block's lettering, from the font detector.
+#[derive(Clone, Copy, Debug)]
+pub struct TextColors {
+    pub fill: [u8; 3],
+    /// Outline colour, when the lettering has one.
+    pub outline: Option<[u8; 3]>,
+}
+
+/// Crops to OCR for `block`, in reading order: for a vertical block, its
+/// columns right to left, long ones cut into chunks; otherwise (or when
+/// no columns can be told apart) the whole block.
+///
+/// Columns are found in an ink map: pixels of the segmentation `mask`
+/// that also have the lettering's fill colour. Outlined lettering fills
+/// the gaps between columns in the mask itself, so the fill colour is what
+/// separates them; the plain mask is the fallback.
 pub fn ocr_crops(
     image: &DynamicImage,
+    rgb: &RgbImage,
     mask: Option<&GrayImage>,
+    colors: Option<TextColors>,
     block: &TextRegion,
 ) -> Vec<DynamicImage> {
     let whole = || vec![crop_text_block_bbox(image, block)];
-    let Some(mask) = mask.filter(|m| m.dimensions() == (image.width(), image.height())) else {
-        return whole();
-    };
+    let mask = mask.filter(|m| m.dimensions() == rgb.dimensions());
     let vertical = match block.source_direction {
         Some(direction) => direction == TextDirection::Vertical,
         None => block.height > block.width * 1.2,
@@ -54,18 +67,42 @@ pub fn ocr_crops(
     if !vertical || block.rotation_deg.is_some_and(|r| r.abs() > 3.0) {
         return whole();
     }
-    let columns = vertical_columns(mask, block);
     let long = |c: &Column| (c.bottom - c.top) as f32 > (c.x2 - c.x1) as f32 * MAX_COLUMN_RATIO;
-    // A single short column: the whole block is as good and safer if the
-    // mask missed a stroke.
-    if columns.is_empty() || (columns.len() == 1 && !long(&columns[0])) {
-        return whole();
+    let usable = |columns: &[Column]| columns.len() >= 2 || columns.first().is_some_and(long);
+
+    let mut found = None;
+    for ink in [
+        colors.and_then(|c| colour_ink(rgb, mask, c, block)),
+        // In case the detector swapped fill and outline.
+        colors
+            .and_then(|c| {
+                c.outline.map(|o| TextColors {
+                    fill: o,
+                    outline: Some(c.fill),
+                })
+            })
+            .and_then(|c| colour_ink(rgb, mask, c, block)),
+        mask.cloned(),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let columns = vertical_columns(&ink, block);
+        if usable(&columns) {
+            found = Some((ink, columns));
+            break;
+        }
     }
-    let (w, h) = mask.dimensions();
+    // A single short column: the whole block is as good and safer if the
+    // ink map missed a stroke.
+    let Some((ink, columns)) = found else {
+        return whole();
+    };
+    let (w, h) = ink.dimensions();
     columns
         .iter()
         .rev()
-        .flat_map(|c| chunk_column(mask, *c))
+        .flat_map(|c| chunk_column(&ink, *c))
         .map(|c| {
             let pad = ((c.x2 - c.x1) as f32 * 0.2).ceil().max(2.0) as u32;
             let x1 = c.x1.saturating_sub(pad);
@@ -75,6 +112,57 @@ pub fn ocr_crops(
             image.crop_imm(x1, y1, x2 - x1, y2 - y1)
         })
         .collect()
+}
+
+fn colour_distance(a: [u8; 3], b: [u8; 3]) -> u32 {
+    a.iter()
+        .zip(b)
+        .map(|(&x, y)| (x as i32 - y as i32).pow(2) as u32)
+        .sum()
+}
+
+/// Page-sized ink map around `block`: pixels in `mask` (when given) whose
+/// colour is the lettering's fill rather than its outline. `None` when the
+/// fill colour cannot be told from the outline.
+fn colour_ink(
+    rgb: &RgbImage,
+    mask: Option<&GrayImage>,
+    colors: TextColors,
+    block: &TextRegion,
+) -> Option<GrayImage> {
+    // Fill and outline need to differ clearly to separate them.
+    const MIN_CONTRAST: u32 = 60 * 60;
+    // Without an outline: pixels this close to the fill colour.
+    const MAX_FILL_DISTANCE: u32 = 90 * 90;
+    let outline = colors
+        .outline
+        .filter(|o| colour_distance(*o, colors.fill) >= MIN_CONTRAST);
+    let (w, h) = rgb.dimensions();
+    let reach = block.width.max(block.height);
+    let x1 = (block.x - reach).max(0.0) as u32;
+    let y1 = (block.y - reach).max(0.0) as u32;
+    let x2 = ((block.x + block.width + reach).max(0.0) as u32).min(w);
+    let y2 = ((block.y + block.height + reach).max(0.0) as u32).min(h);
+    let mut ink = GrayImage::new(w, h);
+    let mut any = false;
+    for y in y1..y2 {
+        for x in x1..x2 {
+            if mask.is_some_and(|m| m.get_pixel(x, y)[0] < INK) {
+                continue;
+            }
+            let px = rgb.get_pixel(x, y).0;
+            let to_fill = colour_distance(px, colors.fill);
+            let is_fill = match outline {
+                Some(o) => to_fill < colour_distance(px, o),
+                None => to_fill <= MAX_FILL_DISTANCE,
+            };
+            if is_fill {
+                ink.put_pixel(x, y, Luma([255]));
+                any = true;
+            }
+        }
+    }
+    any.then_some(ink)
 }
 
 fn inked(mask: &GrayImage, x: u32, y: u32) -> bool {
@@ -220,7 +308,11 @@ pub fn join_columns(parts: Vec<String>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{Luma, RgbImage};
+    use image::{Luma, Rgb, RgbImage};
+
+    fn rgb(image: &DynamicImage) -> RgbImage {
+        image.to_rgb8()
+    }
 
     fn paint(mask: &mut GrayImage, x: std::ops::Range<u32>, y: std::ops::Range<u32>) {
         for yy in y {
@@ -256,7 +348,13 @@ mod tests {
         glyph_column(&mut mask, 20, 20, 30, 4);
         glyph_column(&mut mask, 70, 20, 30, 5);
         glyph_column(&mut mask, 120, 20, 30, 2);
-        let crops = ocr_crops(&image, Some(&mask), &block(10.0, 10.0, 150.0, 280.0));
+        let crops = ocr_crops(
+            &image,
+            &rgb(&image),
+            Some(&mask),
+            None,
+            &block(10.0, 10.0, 150.0, 280.0),
+        );
         assert_eq!(crops.len(), 3);
         // Rightmost (shortest) column first.
         assert!(crops[0].height() < crops[2].height());
@@ -286,7 +384,13 @@ mod tests {
         let mut mask = GrayImage::new(100, 600);
         // 14 glyphs of 30 px: 14 * 34 = 476 px tall, ratio ~16.
         glyph_column(&mut mask, 30, 20, 30, 14);
-        let crops = ocr_crops(&image, Some(&mask), &block(20.0, 10.0, 50.0, 500.0));
+        let crops = ocr_crops(
+            &image,
+            &rgb(&image),
+            Some(&mask),
+            None,
+            &block(20.0, 10.0, 50.0, 500.0),
+        );
         assert_eq!(crops.len(), 4);
         let column = vertical_columns(&mask, &block(20.0, 10.0, 50.0, 500.0))[0];
         for piece in chunk_column(&mask, column).windows(2) {
@@ -305,16 +409,75 @@ mod tests {
         let mut mask = GrayImage::new(200, 300);
         glyph_column(&mut mask, 40, 20, 30, 5);
         paint(&mut mask, 75..82, 30..60); // ruby beside the column
-        let one_column = ocr_crops(&image, Some(&mask), &block(30.0, 10.0, 60.0, 200.0));
+        let one_column = ocr_crops(
+            &image,
+            &rgb(&image),
+            Some(&mask),
+            None,
+            &block(30.0, 10.0, 60.0, 200.0),
+        );
         assert_eq!(one_column.len(), 1);
 
         glyph_column(&mut mask, 120, 20, 30, 5);
         let mut horizontal = block(30.0, 10.0, 130.0, 200.0);
         horizontal.source_direction = Some(TextDirection::Horizontal);
-        assert_eq!(ocr_crops(&image, Some(&mask), &horizontal).len(), 1);
         assert_eq!(
-            ocr_crops(&image, None, &block(30.0, 10.0, 130.0, 200.0)).len(),
+            ocr_crops(&image, &rgb(&image), Some(&mask), None, &horizontal).len(),
             1
         );
+        assert_eq!(
+            ocr_crops(
+                &image,
+                &rgb(&image),
+                None,
+                None,
+                &block(30.0, 10.0, 130.0, 200.0)
+            )
+            .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn outlined_lettering_is_split_by_its_fill_colour() {
+        // Navy glyphs in thick white outlines: the outlines of the two
+        // columns touch, so the mask (fill + outline) has no gap.
+        let navy = Rgb([30, 70, 120]);
+        let mut page = RgbImage::from_pixel(200, 300, Rgb([90, 120, 60]));
+        let mut mask = GrayImage::new(200, 300);
+        for (x, glyphs) in [(40u32, 5u32), (90, 3)] {
+            for g in 0..glyphs {
+                let y = 30 + g * 34;
+                for yy in y - 6..y + 36 {
+                    for xx in x - 10..x + 40 {
+                        page.put_pixel(xx, yy, Rgb([255, 255, 255]));
+                        mask.put_pixel(xx, yy, Luma([255]));
+                    }
+                }
+            }
+        }
+        for (x, glyphs) in [(40u32, 5u32), (90, 3)] {
+            for g in 0..glyphs {
+                let y = 30 + g * 34;
+                for yy in y..y + 30 {
+                    for xx in x..x + 30 {
+                        page.put_pixel(xx, yy, navy);
+                    }
+                }
+            }
+        }
+        let image = DynamicImage::ImageRgb8(page);
+        let b = block(30.0, 20.0, 110.0, 200.0);
+        assert_eq!(
+            ocr_crops(&image, &rgb(&image), Some(&mask), None, &b).len(),
+            1
+        );
+        let colors = TextColors {
+            fill: [30, 70, 120],
+            outline: Some([255, 255, 255]),
+        };
+        let crops = ocr_crops(&image, &rgb(&image), Some(&mask), Some(colors), &b);
+        assert_eq!(crops.len(), 2);
+        assert!(crops[0].height() < crops[1].height()); // right column first
     }
 }

@@ -42,21 +42,26 @@ def columns(m):
     widest = max(b - a for a, b in merged)
     return [c for c in merged if c[1] - c[0] >= widest * 0.45]
 
+def runs_of(m, a, b):
+    rows = np.where(m[:, a:b].any(1))[0]
+    gap = int(np.ceil((b - a) * 0.6))
+    runs, st = [], 0
+    for k in range(len(rows)):
+        if k + 1 == len(rows) or rows[k + 1] - rows[k] > gap + 1:
+            runs.append((rows[st], rows[k] + 1)); st = k + 1
+    return runs
+
 def crops(im, m, cols):
     W, H = im.size
+    allruns = [runs_of(m, a, b) for a, b in cols]
+    top = min(r[0][0] for r in allruns if r)
     out = []
     for i, (a, b) in enumerate(cols):
         pad = max(2, int(np.ceil((b - a) * 0.2)))
         lo = cols[i - 1][1] + (a - cols[i - 1][1]) // 2 if i else 0
         hi = b + (cols[i + 1][0] - b + 1) // 2 if i + 1 < len(cols) else W
-        rows = np.where(m[:, a:b].any(1))[0]
-        gap = int(np.ceil((b - a) * 0.6))
-        runs, st = [], 0
-        for k in range(len(rows)):
-            if k + 1 == len(rows) or rows[k + 1] - rows[k] > gap + 1:
-                runs.append(rows[st:k + 1]); st = k + 1
-        rows = max(runs, key=len)
-        out.append(im.crop((max(a - pad, lo), max(0, rows[0] - pad), min(b + pad, hi), min(H, rows[-1] + 1 + pad))))
+        t, btm = min(allruns[i], key=lambda r: abs(r[0] - top))
+        out.append(im.crop((max(a - pad, lo), max(0, t - pad), min(b + pad, hi), min(H, btm + pad))))
     return out[::-1]
 
 total = {"whole": 0, "columns": 0}

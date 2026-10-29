@@ -243,15 +243,34 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
     let min_width = (widest as f32 * MIN_COLUMN_SHARE).ceil() as u32;
     merged.retain(|(a, b)| b - a >= min_width);
 
-    merged
+    // Runs of glyphs down each column. Columns of a block start level, so
+    // each column keeps the run starting nearest the block's first glyph;
+    // other lettering further along the same strip (a sign in the scene,
+    // say) is left out.
+    let column_runs: Vec<(u32, u32, Vec<(u32, u32)>)> = merged
         .into_iter()
-        .filter_map(|(x1, x2)| {
-            let row_inked = |y: u32| (x1..x2).any(|x| inked(mask, x, y));
-            let rows: Vec<u32> = (by1..by2).filter(|&y| row_inked(y)).collect();
-            // Longest run of glyphs: other lettering further along the same
-            // strip (a sign in the scene, say) is left out.
+        .map(|(x1, x2)| {
+            let rows: Vec<u32> = (by1..by2)
+                .filter(|&y| (x1..x2).any(|x| inked(mask, x, y)))
+                .collect();
             let max_gap = ((x2 - x1) as f32 * 0.6).ceil() as u32;
-            let (mut top, mut bottom) = longest_run(&rows, max_gap)?;
+            (x1, x2, glyph_runs(&rows, max_gap))
+        })
+        .collect();
+    let Some(text_top) = column_runs
+        .iter()
+        .filter_map(|(_, _, runs)| runs.first().map(|r| r.0))
+        .min()
+    else {
+        return Vec::new();
+    };
+
+    column_runs
+        .into_iter()
+        .filter_map(|(x1, x2, runs)| {
+            let row_inked = |y: u32| (x1..x2).any(|x| inked(mask, x, y));
+            let max_gap = ((x2 - x1) as f32 * 0.6).ceil() as u32;
+            let (mut top, mut bottom) = runs.into_iter().min_by_key(|r| r.0.abs_diff(text_top))?;
             // Follow the column past the box while its glyphs continue
             // (allowing the gap between two glyphs).
             let mut gap = 0;
@@ -286,24 +305,21 @@ fn vertical_columns(mask: &GrayImage, block: &TextRegion) -> Vec<Column> {
         .collect()
 }
 
-/// `(first, last + 1)` of the run of `rows` (sorted) with the most rows,
-/// where neighbours at most `max_gap` empty rows apart belong to one run.
-fn longest_run(rows: &[u32], max_gap: u32) -> Option<(u32, u32)> {
-    let mut best: Option<(u32, u32, usize)> = None;
+/// Runs `(first, last + 1)` of `rows` (sorted), top to bottom; rows at
+/// most `max_gap` empty rows apart belong to one run.
+fn glyph_runs(rows: &[u32], max_gap: u32) -> Vec<(u32, u32)> {
+    let mut runs = Vec::new();
     let mut start = 0;
     for i in 0..rows.len() {
-        let ends_here = rows
+        if rows
             .get(i + 1)
-            .is_none_or(|&next| next - rows[i] > max_gap + 1);
-        if ends_here {
-            let count = i + 1 - start;
-            if best.is_none_or(|(_, _, c)| count > c) {
-                best = Some((rows[start], rows[i] + 1, count));
-            }
+            .is_none_or(|&next| next - rows[i] > max_gap + 1)
+        {
+            runs.push((rows[start], rows[i] + 1));
             start = i + 1;
         }
     }
-    best.map(|(a, b, _)| (a, b))
+    runs
 }
 
 /// Join the text read from one block's crops.
@@ -505,9 +521,10 @@ mod tests {
         let mut mask = GrayImage::new(200, 400);
         glyph_column(&mut mask, 20, 20, 30, 5);
         glyph_column(&mut mask, 60, 20, 30, 3);
-        // A small sign 80 px below the right column, inside the box.
-        paint(&mut mask, 65..85, 210..230);
-        let columns = vertical_columns(&mask, &block(10.0, 10.0, 90.0, 240.0));
+        // A sign below the right column, inside the box, taller than the
+        // column's own text.
+        paint(&mut mask, 65..85, 210..330);
+        let columns = vertical_columns(&mask, &block(10.0, 10.0, 90.0, 340.0));
         assert_eq!(columns.len(), 2);
         assert_eq!((columns[1].top, columns[1].bottom), (20, 20 + 2 * 34 + 30));
     }

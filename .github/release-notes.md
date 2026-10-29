@@ -37,6 +37,9 @@ show a SmartScreen warning because the installer is not code-signed: click
   column, whole block, or the whole page with numbered boxes.
 - OCR one block again (button on each block, or right-click "OCR this
   block" on the canvas) after moving or resizing it.
+- Export of many pages (PSD / PNG): choose the folder first, pages are
+  written one by one (`001-<page>.psd`, …) with a progress bar and Cancel,
+  so exporting a whole 100+ page project no longer hangs.
 - Local LLMs (LM Studio etc.): replies are length-limited and runaway
   repeated sounds are cut, so a model looping on moans no longer runs on.
 - Undo / redo also covers character and speaker edits.

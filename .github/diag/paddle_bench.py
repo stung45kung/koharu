@@ -65,10 +65,13 @@ def crops(im, m, cols):
 
 
 import subprocess, sys
+BIN = sys.argv[1]
+EXTRA = sys.argv[2:]
+LABEL = BIN + ' ' + ' '.join(EXTRA)
 def paddle(img, path):
     img.save(path)
-    out = subprocess.run(["./llama/llama-mtmd-cli", "-m", "m.gguf", "--mmproj", "mm.gguf",
-        "--image", path, "-p", "OCR:", "--temp", "0", "-n", "256", "--jinja"],
+    out = subprocess.run([f"./{BIN}/llama-mtmd-cli", "-m", "m.gguf", "--mmproj", "mm.gguf",
+        "--image", path, "-p", "OCR:", "--temp", "0", "-n", "256", "--jinja"] + EXTRA,
         capture_output=True, text=True)
     if not out.stdout.strip():
         print(f"::notice title=stderr {path}::" + " | ".join(out.stderr.strip().splitlines()[-6:])[:1500])
@@ -84,6 +87,6 @@ for name, truth in TRUTH.items():
     n += len(truth)
     for k, v in (("whole", whole), ("columns", col)):
         e = dist(v, truth); total[k] += e
-        print(f"::notice title=paddle {name} {k} errors={e}/{len(truth)}::{v}")
+        print(f"::notice title={LABEL} {name} {k} errors={e}/{len(truth)}::{v}")
 for k, e in total.items():
-    print(f"::notice title=paddle TOTAL {k}::char accuracy {100 * (1 - e / n):.1f}% ({e} edits / {n} chars)")
+    print(f"::notice title={LABEL} TOTAL {k}::char accuracy {100 * (1 - e / n):.1f}% ({e} edits / {n} chars)")

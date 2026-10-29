@@ -16,17 +16,19 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install numpy pillow huggingface_hub
-      - run: |
-          for tag in $(gh release list -R ggml-org/llama.cpp -L 15 --json tagName -q '.[].tagName'); do
-            asset=$(gh release view "$tag" -R ggml-org/llama.cpp --json assets -q '.assets[].name' | grep -iE 'bin-ubuntu-x64\.(zip|tar\.gz)$' | head -1 || true)
-            if [ -n "$asset" ]; then break; fi
-          done
-          echo "::notice title=asset::$tag $asset"
-          gh release download "$tag" -R ggml-org/llama.cpp --pattern "$asset" -O pkg
-          mkdir raw && (unzip -q pkg -d raw 2>/dev/null || tar -xzf pkg -C raw)
-          bin=$(dirname "$(find raw -name 'llama-mtmd-cli' -type f | head -1)")
-          echo "bin=$bin"
-          mkdir llama && cp -r "$bin"/* llama/
+      - name: llama.cpp binaries
+        run: |
+          get() {
+            tag=$1; dir=$2
+            asset=$(gh release view "$tag" -R ggml-org/llama.cpp --json assets -q '.assets[].name' | grep -iE 'bin-ubuntu-x64\.(zip|tar\.gz)$' | head -1)
+            echo "::notice title=asset $dir::$tag $asset"
+            gh release download "$tag" -R ggml-org/llama.cpp --pattern "$asset" -O "$dir.pkg"
+            mkdir "$dir.raw" && (unzip -q "$dir.pkg" -d "$dir.raw" 2>/dev/null || tar -xzf "$dir.pkg" -C "$dir.raw")
+            bin=$(dirname "$(find "$dir.raw" -name 'llama-mtmd-cli' -type f | head -1)")
+            mkdir "$dir" && cp -r "$bin"/* "$dir"/
+          }
+          get b11981 new
+          get b8935 old
       - run: |
           python - <<'PY'
           from huggingface_hub import hf_hub_download
@@ -34,7 +36,9 @@ jobs:
           shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", "PaddleOCR-VL-1.6-GGUF.gguf"), "m.gguf")
           shutil.copy(hf_hub_download("PaddlePaddle/PaddleOCR-VL-1.6-GGUF", "PaddleOCR-VL-1.6-GGUF-mmproj.gguf"), "mm.gguf")
           PY
-      - run: |
-          export LD_LIBRARY_PATH=$PWD/llama
-          ./llama/llama-mtmd-cli -m m.gguf --mmproj mm.gguf --image .github/diag/t2.png -p "OCR:" --temp 0 -n 256 2>&1 | tail -5
-      - run: LD_LIBRARY_PATH=$PWD/llama python .github/diag/paddle_bench.py
+      - name: old llama.cpp (Koharu's b8935)
+        run: LD_LIBRARY_PATH=$PWD/old python .github/diag/paddle_bench.py old
+      - name: new llama.cpp with Koharu's repetition penalty
+        run: LD_LIBRARY_PATH=$PWD/new python .github/diag/paddle_bench.py new --repeat-penalty 1.2 --repeat-last-n -1
+      - name: old llama.cpp with Koharu's repetition penalty
+        run: LD_LIBRARY_PATH=$PWD/old python .github/diag/paddle_bench.py old --repeat-penalty 1.2 --repeat-last-n -1

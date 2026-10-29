@@ -92,7 +92,13 @@ inventory::submit! {
     EngineInfo {
         id: "paddle-ocr-vl-1.6",
         name: "PaddleOCR-VL",
-        needs: &[Artifact::TextBoxes],
+        // The segmentation mask and font colours (when produced in the same
+        // run) guide the column split, so OCR runs after them.
+        needs: &[
+            Artifact::TextBoxes,
+            Artifact::SegmentMask,
+            Artifact::FontPredictions,
+        ],
         produces: &[Artifact::OcrText],
         load: |runtime, cpu| Box::pin(async move {
             let backend = shared_llama_backend(runtime)?;

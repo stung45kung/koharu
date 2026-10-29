@@ -127,7 +127,13 @@ inventory::submit! {
     EngineInfo {
         id: "llm-vision-ocr",
         name: "LLM Vision OCR, column by column (loaded LLM, e.g. LM Studio)",
-        needs: &[Artifact::TextBoxes],
+        // The segmentation mask and font colours (when produced in the same
+        // run) guide the column split, so OCR runs after them.
+        needs: &[
+            Artifact::TextBoxes,
+            Artifact::SegmentMask,
+            Artifact::FontPredictions,
+        ],
         produces: &[Artifact::OcrText],
         load: |_runtime, _cpu| {
             Box::pin(async move { Ok(Box::new(Model { columns: true }) as Box<dyn Engine>) })
@@ -139,7 +145,13 @@ inventory::submit! {
     EngineInfo {
         id: "llm-vision-ocr-block",
         name: "LLM Vision OCR, whole block (loaded LLM, e.g. LM Studio)",
-        needs: &[Artifact::TextBoxes],
+        // The segmentation mask and font colours (when produced in the same
+        // run) guide the column split, so OCR runs after them.
+        needs: &[
+            Artifact::TextBoxes,
+            Artifact::SegmentMask,
+            Artifact::FontPredictions,
+        ],
         produces: &[Artifact::OcrText],
         load: |_runtime, _cpu| {
             Box::pin(async move { Ok(Box::new(Model { columns: false }) as Box<dyn Engine>) })

@@ -70,7 +70,13 @@ inventory::submit! {
     EngineInfo {
         id: "manga-ocr",
         name: "Manga OCR",
-        needs: &[Artifact::TextBoxes],
+        // The segmentation mask and font colours (when produced in the same
+        // run) guide the column split, so OCR runs after them.
+        needs: &[
+            Artifact::TextBoxes,
+            Artifact::SegmentMask,
+            Artifact::FontPredictions,
+        ],
         produces: &[Artifact::OcrText],
         load: |runtime, cpu| Box::pin(async move {
             let m = MangaOcr::load(runtime, cpu).await?;

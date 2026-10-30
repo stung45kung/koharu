@@ -18,13 +18,18 @@ Manga OCR ยังอ่านตัวอักษรผิดบ่อย จ
 
 นอกขอบเขต: ตรวจแบบใช้แค่ข้อความ, ตรวจทั้งหน้าในภาพเดียว, ให้คะแนนความมั่นใจ
 
-## 1. ข้อมูล (koharu-core)
+## 1. ข้อมูล: ไฟล์แยก `ocr_fixes.toml`
 
-- `TextData` เพิ่มช่อง `ocr_original: Option<String>` (`#[serde(default)]`):
-  ข้อความ OCR ก่อน LLM แก้ มีค่าเฉพาะตอนที่ขั้นตรวจเปลี่ยนข้อความจริง
-- `TextDataPatch` เพิ่ม `ocr_original: Option<Option<String>>` ให้ใช้ผ่าน
-  `Op::UpdateNode` ได้ จึงกด Undo/Redo ได้เหมือนการแก้อื่น
-- ไฟล์โปรเจกต์เก่าโหลดได้ เพราะช่องที่ไม่มีจะได้ค่า `None`
+> แก้ไขระหว่างลงมือ: เดิมจะเพิ่มช่องใน `TextData` แต่ `scene.bin` และ history log
+> เป็นไฟล์ postcard ที่เรียงข้อมูลตามตำแหน่ง เพิ่มช่องแล้วโปรเจกต์เก่าจะเปิดไม่ได้
+> จึงเก็บแยกไฟล์แบบเดียวกับ `characters.toml`
+
+- koharu-core `OcrFixes { originals: IndexMap<NodeId, String> }` พร้อม `record` (เก็บค่าแรกไว้)
+  และ `forget`
+- koharu-app `ocr_fixes.rs` load/save `.khrproj/ocr_fixes.toml`, session มี `ocr_fixes()` /
+  `update_ocr_fixes(f)`
+- API: `GET /ocr-fixes`, `POST /ocr-fixes/forget { nodeIds }`
+- ป้ายไม่ย้อนตาม Undo (แต่ตัวข้อความ Undo ได้ตามปกติ) และป้ายจะขึ้นเฉพาะเมื่อข้อความตอนนี้ต่างจากข้อความเดิมที่บันทึกไว้
 
 ## 2. ขั้นตอน pipeline `ocr-check` (koharu-app)
 
@@ -59,9 +64,8 @@ Manga OCR ยังอ่านตัวอักษรผิดบ่อย จ
 ### ผลลัพธ์
 
 - คำตอบหลังทำความสะอาดเท่ากับข้อความเดิม → ไม่สร้าง op
-- ต่างกันและผ่านตัวกัน → `UpdateNode` ตั้ง `text = คำตอบ` และตั้ง
-  `ocr_original = Some(ข้อความเดิม)` แต่ถ้าบล็อกมี `ocr_original` อยู่แล้ว
-  จะเก็บค่าเดิมไว้ ป้ายจึงยังชี้ไปที่ผล OCR ตัวแรกสุด
+- ต่างกันและผ่านตัวกัน → `UpdateNode` ตั้ง `text = คำตอบ` และ `OcrFixes.record(บล็อก, ข้อความเดิม)`
+  ถ้าบล็อกมีข้อความเดิมบันทึกไว้แล้ว จะเก็บค่าเดิมไว้ ป้ายจึงยังชี้ไปที่ผล OCR ตัวแรกสุด
 
 ### กรณีผิดพลาด
 
@@ -72,10 +76,8 @@ Manga OCR ยังอ่านตัวอักษรผิดบ่อย จ
 
 ## 3. ล้างค่าเมื่อ OCR ใหม่
 
-engine OCR ทุกตัว (`manga_ocr`, `mit48px_ocr`, `paddle_ocr`, `llm_vision_ocr`,
-`llm_vision_page_ocr`) ต้องตั้ง `ocr_original: Some(None)` ใน patch ด้วย ถ้า OCR ใหม่
-ป้ายเก่าจะหายไป แนะนำให้ทำ helper กลางใน `support.rs` เช่น `ocr_text_op(page, id, text)`
-แล้วให้ทุกตัวเรียกใช้
+ตัวรัน pipeline: หลังขั้นที่ produce `OcrText` apply สำเร็จ จะ `forget` บล็อกที่ขั้นนั้นแก้
+(ดูจาก `UpdateNode` ใน ops) ทำที่เดียว ไม่ต้องแก้ engine OCR แต่ละตัว
 
 ## 4. UI
 
@@ -87,23 +89,22 @@ engine OCR ทุกตัว (`manga_ocr`, `mit48px_ocr`, `paddle_ocr`, `llm_vi
   เพราะขั้นนี้ข้ามบล็อกที่ไม่มีข้อความอยู่แล้ว
 - `TextBlocksPanel.tsx` (`BlockCard`):
   - ปุ่ม "Check OCR" (ไอคอน `ScanSearchIcon`) ข้างปุ่ม OCR ปิดไว้เมื่อกำลังประมวลผลหรือยังไม่มี LLM
-  - ถ้า `ocrOriginal` มีค่า: แสดงป้าย "LLM fixed" ชี้แล้วเห็นข้อความเดิม และมีปุ่มคืนค่า
-    ที่ส่ง patch `{ text: ocrOriginal, ocrOriginal: null }`
+  - ถ้าบล็อกมีข้อความเดิมใน `OcrFixes` (และต่างจากข้อความตอนนี้): แสดงป้าย "LLM fixed"
+    ชี้แล้วเห็นข้อความเดิม และมีปุ่มคืนค่าที่ส่ง op แก้ text ตามปกติแล้วเรียก forget
 - ข้อความ UI: เพิ่ม key ใน `en-US/translation.json` (ภาษาอื่นใช้ fallback)
-- ชนิดข้อมูล API ฝั่ง UI ที่ generate มา (`TextData`/`TextDataPatch`) ต้องมี `ocrOriginal` ด้วย
+- client `ui/lib/ocrFixes.ts` เขียนเอง (เหมือน `lib/characters.ts`)
 
 ## 5. การทดสอบ
 
 Rust (unit test ในไฟล์ engine/core):
 - ตัวกันการแต่ง: รับการแก้ 1–2 ตัวอักษร ไม่รับคำตอบว่าง ไม่รับคำตอบที่ต่างกันเกินครึ่ง ไม่รับคำตอบที่ยาวเกิน
-- สร้าง op: ถ้าเหมือนเดิมไม่สร้าง op, ถ้าแก้จะได้ `ocr_original` เป็นข้อความเดิม,
-  ถ้ามี `ocr_original` อยู่แล้วจะเก็บค่าเดิมไว้
+- สร้าง op: ถ้าเหมือนเดิมไม่สร้าง op, ถ้าแก้จะตั้ง text; `OcrFixes.record` เก็บค่าแรกไว้, `forget` ลบเฉพาะบล็อกที่ระบุ
 - prompt มีข้อความ OCR, ชื่อตัวละคร และคำใน glossary โดยตัดที่ 60 รายการ
-- `TextData` เก่าที่ไม่มีช่องนี้ deserialize ได้
-- helper OCR ตั้ง `ocr_original` เป็น `None`
+- `ocr_fixes.toml` บันทึก/โหลดได้ และอยู่รอดหลังเปิดโปรเจกต์ใหม่
+- ตัวรัน pipeline หา node ที่ขั้น OCR แก้ได้ (รวมใน batch)
 
 UI (vitest):
-- เห็นป้ายเมื่อมี `ocrOriginal` กดคืนค่าแล้วส่ง patch ถูกต้อง
+- เห็นป้ายเมื่อมีข้อความเดิมใน `OcrFixes` ที่ต่างจากข้อความตอนนี้ กดคืนค่าแล้วส่ง op แก้ text และเรียก forget
 - ปุ่ม Check OCR เรียก `startPipeline` ด้วย `['ocr-check']` และบล็อกนั้น
 
 ## 6. Build / ส่งมอบ

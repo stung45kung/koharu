@@ -72,7 +72,7 @@ fn step_for(info: &EngineInfo) -> Option<PipelineStep> {
         | Artifact::SegmentMask
         | Artifact::FontPredictions
         | Artifact::BubbleMask => Some(PipelineStep::Detect),
-        Artifact::OcrText => Some(PipelineStep::Ocr),
+        Artifact::OcrText | Artifact::OcrChecked => Some(PipelineStep::Ocr),
         Artifact::Speakers | Artifact::Translations => Some(PipelineStep::LlmGenerate),
         Artifact::Inpainted => Some(PipelineStep::Inpaint),
         Artifact::FinalRender => Some(PipelineStep::Render),
@@ -375,6 +375,23 @@ mod tests {
             order.iter().position(|o| *o == index).unwrap()
         };
         assert!(pos("manga-ocr") < pos("speaker-guess"));
+        assert!(pos("speaker-guess") < pos("llm"));
+    }
+
+    #[test]
+    fn ocr_check_runs_before_speaker_guess_and_translate() {
+        let ids = ["llm", "speaker-guess", "ocr-check", "manga-ocr"];
+        let infos: Vec<&EngineInfo> = ids
+            .iter()
+            .map(|id| Registry::find(id).expect("engine registered"))
+            .collect();
+        let order = engine::build_order(&infos).expect("order");
+        let pos = |id: &str| {
+            let index = ids.iter().position(|i| *i == id).unwrap();
+            order.iter().position(|o| *o == index).unwrap()
+        };
+        assert!(pos("manga-ocr") < pos("ocr-check"));
+        assert!(pos("ocr-check") < pos("speaker-guess"));
         assert!(pos("speaker-guess") < pos("llm"));
     }
 

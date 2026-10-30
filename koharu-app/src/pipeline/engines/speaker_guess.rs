@@ -51,7 +51,8 @@ inventory::submit! {
     EngineInfo {
         id: "speaker-guess",
         name: "Guess speakers (LLM)",
-        needs: &[Artifact::OcrText],
+        // `OcrChecked` runs `ocr-check` (when selected) first.
+        needs: &[Artifact::OcrText, Artifact::OcrChecked],
         produces: &[Artifact::Speakers],
         load: |_runtime, _cpu| Box::pin(async move {
             Ok(Box::new(Model) as Box<dyn Engine>)

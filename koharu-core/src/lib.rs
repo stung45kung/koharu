@@ -13,6 +13,7 @@ pub mod events;
 pub mod font;
 pub mod glossary;
 pub mod google_fonts;
+pub mod ocr_fixes;
 pub mod op;
 pub mod protocol;
 pub mod scene;
@@ -28,6 +29,7 @@ pub use events::{
 pub use font::{FontPrediction, NamedFontPrediction, TextDirection, TopFont};
 pub use glossary::{Glossary, GlossaryEntry};
 pub use google_fonts::{FontSource, GoogleFontCatalog, GoogleFontEntry, GoogleFontVariant};
+pub use ocr_fixes::OcrFixes;
 pub use op::{
     ImageDataPatch, MaskDataPatch, NodeDataPatch, NodePatch, Op, OpError, OpResult, PagePatch,
     ProjectMetaPatch, TextDataPatch,

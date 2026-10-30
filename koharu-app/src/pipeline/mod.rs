@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Result, bail};
-use koharu_core::{Op, PageId, PipelineStep};
+use koharu_core::{NodeId, Op, PageId, PipelineStep};
 use koharu_runtime::RuntimeManager;
 use tracing::Instrument;
 
@@ -243,6 +243,12 @@ pub async fn run(
             if ops.is_empty() {
                 continue;
             }
+            // Blocks read by OCR again lose their LLM-check fix badge.
+            let reread = if info.produces.contains(&Artifact::OcrText) {
+                updated_nodes(&ops)
+            } else {
+                Vec::new()
+            };
             let batch = Op::Batch {
                 ops,
                 label: format!("{}: page {}", info.id, page_id),
@@ -260,6 +266,11 @@ pub async fn run(
                     warnings.as_ref(),
                 );
                 continue 'pages;
+            }
+            if !reread.is_empty()
+                && let Err(err) = session.update_ocr_fixes(|f| f.forget(&reread))
+            {
+                tracing::warn!(page = %page_id, "could not clear OCR fixes: {err:#}");
             }
         }
     }
@@ -357,9 +368,41 @@ pub fn catalog() -> EngineCatalog {
     }
 }
 
+/// Nodes changed by `UpdateNode` ops (also inside batches).
+fn updated_nodes(ops: &[Op]) -> Vec<NodeId> {
+    let mut out = Vec::new();
+    for op in ops {
+        match op {
+            Op::UpdateNode { id, .. } => out.push(*id),
+            Op::Batch { ops, .. } => out.extend(updated_nodes(ops)),
+            _ => {}
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn updated_nodes_lists_update_ops_in_batches() {
+        let (a, b) = (NodeId::new(), NodeId::new());
+        let update = |id| Op::UpdateNode {
+            page: PageId::new(),
+            id,
+            patch: koharu_core::NodePatch::default(),
+            prev: koharu_core::NodePatch::default(),
+        };
+        let ops = vec![
+            update(a),
+            Op::Batch {
+                ops: vec![update(b)],
+                label: String::new(),
+            },
+        ];
+        assert_eq!(updated_nodes(&ops), vec![a, b]);
+    }
 
     #[test]
     fn speaker_guess_runs_between_ocr_and_translation() {

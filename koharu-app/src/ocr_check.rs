@@ -4,12 +4,13 @@
 //! text OCR read from it, and the model answers with the text corrected
 //! against the image. This module holds the parts that need no model: the
 //! instructions, the guard that throws away answers that rewrite rather
-//! than correct, and the op that stores a fix (keeping the OCR text in
-//! `ocr_original` so the user can see and restore it).
+//! than correct, and the op that stores a fix. The engine keeps the OCR
+//! text it replaced in the project's `OcrFixes` so the user can see and
+//! restore it.
 
 use koharu_core::glossary::MAX_PROMPT_ENTRIES;
 use koharu_core::{
-    CharacterBook, Glossary, NodeDataPatch, NodeId, NodePatch, Op, PageId, TextData, TextDataPatch,
+    CharacterBook, Glossary, NodeDataPatch, NodeId, NodePatch, Op, PageId, TextDataPatch,
 };
 
 /// Names and terms that may appear in the lettering: every character name,
@@ -89,24 +90,17 @@ fn levenshtein(a: &str, b: &str) -> usize {
 }
 
 /// The op storing `corrected` as the block's text, or `None` when it equals
-/// the current text. The OCR text goes to `ocr_original` unless the block
-/// already has one (checked before), so the badge keeps the first reading.
-pub fn correction_op(page: PageId, id: NodeId, text: &TextData, corrected: &str) -> Option<Op> {
-    let current = text.text.as_deref().unwrap_or_default();
+/// the `current` text.
+pub fn correction_op(page: PageId, id: NodeId, current: &str, corrected: &str) -> Option<Op> {
     if corrected == current {
         return None;
     }
-    let ocr_original = text
-        .ocr_original
-        .is_none()
-        .then(|| Some(current.to_string()));
     Some(Op::UpdateNode {
         page,
         id,
         patch: NodePatch {
             data: Some(NodeDataPatch::Text(TextDataPatch {
                 text: Some(Some(corrected.to_string())),
-                ocr_original,
                 ..Default::default()
             })),
             transform: None,
@@ -120,14 +114,6 @@ pub fn correction_op(page: PageId, id: NodeId, text: &TextData, corrected: &str)
 mod tests {
     use super::*;
     use koharu_core::{Character, CharacterId, GlossaryEntry};
-
-    fn text(t: &str, ocr_original: Option<&str>) -> TextData {
-        TextData {
-            text: Some(t.to_string()),
-            ocr_original: ocr_original.map(str::to_string),
-            ..Default::default()
-        }
-    }
 
     fn text_patch(op: Op) -> TextDataPatch {
         let Op::UpdateNode { patch, .. } = op else {
@@ -174,34 +160,13 @@ mod tests {
 
     #[test]
     fn correction_op_none_when_same() {
-        let id = NodeId::new();
-        assert!(correction_op(PageId::new(), id, &text("はい", None), "はい").is_none());
+        assert!(correction_op(PageId::new(), NodeId::new(), "はい", "はい").is_none());
     }
 
     #[test]
-    fn correction_op_sets_original() {
-        let op = correction_op(
-            PageId::new(),
-            NodeId::new(),
-            &text("あリがとう", None),
-            "ありがとう",
-        )
-        .unwrap();
-        let t = text_patch(op);
-        assert_eq!(t.text, Some(Some("ありがとう".to_string())));
-        assert_eq!(t.ocr_original, Some(Some("あリがとう".to_string())));
-    }
-
-    #[test]
-    fn correction_op_keeps_first_original() {
-        let op = correction_op(
-            PageId::new(),
-            NodeId::new(),
-            &text("ありがと", Some("first")),
-            "ありがとう",
-        )
-        .unwrap();
-        assert_eq!(text_patch(op).ocr_original, None);
+    fn correction_op_sets_the_text() {
+        let op = correction_op(PageId::new(), NodeId::new(), "あリがとう", "ありがとう").unwrap();
+        assert_eq!(text_patch(op).text, Some(Some("ありがとう".to_string())));
     }
 
     #[test]

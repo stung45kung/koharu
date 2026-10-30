@@ -3,6 +3,9 @@
 //! `crate::ocr_check`). Runs after OCR and before speaker guessing and
 //! translation via the `OcrChecked` artifact.
 //!
+//! The OCR text each fix replaced goes to the project's `OcrFixes`
+//! (`ocr_fixes.toml`), not the scene.
+//!
 //! It never fails the page: with no LLM it is skipped, and a reading error
 //! (e.g. a model without vision) is only logged, keeping the fixes made so
 //! far, so translation/inpaint/render still run.
@@ -42,6 +45,7 @@ impl Engine for Model {
         let hints = hint_names(ctx.characters, &ctx.session.glossary());
 
         let mut ops = Vec::new();
+        let mut fixed = Vec::new();
         for (node_id, transform, text) in texts {
             if ctx.cancel.load(Ordering::Relaxed) {
                 break;
@@ -66,7 +70,10 @@ impl Engine for Model {
             };
             match accept_correction(ocr_text, &reply) {
                 Some(corrected) => {
-                    ops.extend(correction_op(ctx.page, node_id, text, &corrected));
+                    if let Some(op) = correction_op(ctx.page, node_id, ocr_text, &corrected) {
+                        ops.push(op);
+                        fixed.push((node_id, ocr_text.to_string()));
+                    }
                 }
                 None => tracing::warn!(
                     page = %ctx.page,
@@ -74,6 +81,16 @@ impl Engine for Model {
                     "ocr-check kept the OCR text: the answer looked like a rewrite"
                 ),
             }
+        }
+        // The OCR text each fix replaced, for the badge and "restore".
+        if !fixed.is_empty()
+            && let Err(err) = ctx.session.update_ocr_fixes(|f| {
+                for (node, original) in fixed {
+                    f.record(node, original);
+                }
+            })
+        {
+            tracing::warn!(page = %ctx.page, "ocr-check could not save the OCR text: {err:#}");
         }
         Ok(ops)
     }

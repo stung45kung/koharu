@@ -21,6 +21,7 @@ pub mod google_fonts;
 pub mod history;
 pub mod library;
 pub mod llm;
+pub mod ocr_check;
 pub mod page_import;
 pub mod pipeline;
 pub mod projects;

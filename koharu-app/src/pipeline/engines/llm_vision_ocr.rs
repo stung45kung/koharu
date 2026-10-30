@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use image::{DynamicImage, imageops::FilterType};
+use image::DynamicImage;
 use koharu_core::Op;
 
 use koharu_ml::comic_text_detector::crop_text_block_bbox;
@@ -13,7 +13,7 @@ use koharu_ml::comic_text_detector::crop_text_block_bbox;
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
 use crate::pipeline::engines::ocr_columns::{
-    TextColors, join_columns, ocr_crops, shrink_for_reading,
+    TextColors, clean_reply, enlarge_small, join_columns, ocr_crops, shrink_for_reading,
 };
 use crate::pipeline::engines::support::{
     load_source_image, ocr_text_op, segment_mask, target_text_nodes, text_node_to_region,
@@ -26,9 +26,6 @@ character as drawn: do not add, drop, repeat or correct characters, do not compl
 and keep punctuation such as ！？… only where it is drawn. Do not translate, explain, add \
 romanization, quotes or any other words. Output only the transcribed text; if there is no \
 text, output nothing.";
-
-/// Crops smaller than this (px, shorter side) are enlarged before sending.
-const MIN_SIDE: u32 = 64;
 
 /// `columns`: send each column of a vertical block on its own; otherwise
 /// the whole block in one image.
@@ -84,34 +81,6 @@ impl Engine for Model {
     }
 }
 
-fn enlarge_small(crop: DynamicImage) -> DynamicImage {
-    let short = crop.width().min(crop.height()).max(1);
-    if short >= MIN_SIDE {
-        return crop;
-    }
-    let scale = (MIN_SIDE as f32 / short as f32).ceil() as u32;
-    crop.resize(
-        crop.width() * scale,
-        crop.height() * scale,
-        FilterType::Lanczos3,
-    )
-}
-
-/// The text of a reply: no code fences, wrapping quotes or line breaks
-/// (columns are joined without spaces).
-fn clean_reply(reply: &str) -> String {
-    let text = reply.trim().trim_matches('`').trim();
-    let text = text
-        .strip_prefix('「')
-        .and_then(|t| t.strip_suffix('」'))
-        .unwrap_or(text);
-    let text = text
-        .strip_prefix('"')
-        .and_then(|t| t.strip_suffix('"'))
-        .unwrap_or(text);
-    text.lines().map(str::trim).collect::<Vec<_>>().concat()
-}
-
 inventory::submit! {
     EngineInfo {
         id: "llm-vision-ocr",
@@ -145,20 +114,5 @@ inventory::submit! {
         load: |_runtime, _cpu| {
             Box::pin(async move { Ok(Box::new(Model { columns: false }) as Box<dyn Engine>) })
         },
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::clean_reply;
-
-    #[test]
-    fn replies_are_reduced_to_the_text() {
-        assert_eq!(clean_reply("「へへ…」\n"), "へへ…");
-        assert_eq!(
-            clean_reply("```\nウチは昼、\n持ち帰りの\n```"),
-            "ウチは昼、持ち帰りの"
-        );
-        assert_eq!(clean_reply("  似合ってるでぇ "), "似合ってるでぇ");
     }
 }

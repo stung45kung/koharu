@@ -31,6 +31,7 @@ import {
   selectAllTextNodesOnCurrentPage,
   undoOp,
 } from '@/lib/io/scene'
+import { OCR_CHECK_STEP } from '@/lib/ocrFixes'
 import { formatShortcutForDisplay, getPlatform } from '@/lib/shortcutUtils'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { usePreferencesStore } from '@/lib/stores/preferencesStore'
@@ -88,6 +89,8 @@ export function MenuBar() {
   const shortcuts = usePreferencesStore((state) => state.shortcuts)
   const customPipeline = usePreferencesStore((state) => state.customPipeline)
   const setCustomPipeline = usePreferencesStore((state) => state.setCustomPipeline)
+  const ocrCheck = usePreferencesStore((state) => state.ocrCheck)
+  const setOcrCheck = usePreferencesStore((state) => state.setOcrCheck)
   const hasSelectedSteps = useMemo(
     () => Object.values(customPipeline).some(Boolean),
     [customPipeline],
@@ -104,12 +107,14 @@ export function MenuBar() {
     const cfg = await getConfig()
     if (!cfg.pipeline) return
     const p = cfg.pipeline
+    const prefs = usePreferencesStore.getState()
     const steps = [
       p.detector,
       p.segmenter,
       p.bubble_segmenter,
       p.font_detector,
       p.ocr,
+      prefs.ocrCheck ? OCR_CHECK_STEP : null,
       // Skips itself when the project has no characters or no LLM is loaded.
       SPEAKER_GUESS_STEP,
       p.translator,
@@ -117,7 +122,6 @@ export function MenuBar() {
       p.renderer,
     ].filter((s): s is string => !!s)
     const editor = useEditorUiStore.getState()
-    const prefs = usePreferencesStore.getState()
     await startPipeline({
       steps,
       pages: opts.pageIds?.length ? opts.pageIds : undefined,
@@ -144,6 +148,8 @@ export function MenuBar() {
         ? [p.detector, p.segmenter, p.bubble_segmenter, p.font_detector]
         : []),
       prefs.customPipeline.ocr ? p.ocr : null,
+      // Also without OCR in this run: checks text read earlier.
+      prefs.ocrCheck ? OCR_CHECK_STEP : null,
       prefs.customPipeline.speakers !== false ? SPEAKER_GUESS_STEP : null,
       prefs.customPipeline.translator ? p.translator : null,
       prefs.customPipeline.inpainter ? p.inpainter : null,
@@ -389,6 +395,15 @@ export function MenuBar() {
             >
               {t('menu.processAll')}
             </MenubarItem>
+            <MenubarCheckboxItem
+              data-testid='menu-ocr-check'
+              className='text-[13px]'
+              checked={ocrCheck}
+              onCheckedChange={(checked) => setOcrCheck(checked)}
+              onSelect={(e) => e.preventDefault()}
+            >
+              {t('menu.ocrCheck')}
+            </MenubarCheckboxItem>
             <MenubarSeparator />
             <MenubarItem
               className='text-[13px]'

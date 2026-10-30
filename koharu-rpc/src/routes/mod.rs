@@ -12,6 +12,7 @@ pub mod history;
 pub mod library;
 pub mod llm;
 pub mod meta;
+pub mod ocr_fixes;
 pub mod operations;
 pub mod pages;
 pub mod pipelines;

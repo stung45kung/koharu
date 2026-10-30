@@ -257,6 +257,20 @@ impl Model {
         images: &[image::DynamicImage],
         instructions: &str,
     ) -> Result<Vec<String>> {
+        let mut out = Vec::with_capacity(images.len());
+        for image in images {
+            out.push(self.read_image(image, instructions).await?);
+        }
+        Ok(out)
+    }
+
+    /// [`Self::read_images`] for one image, so each image can get its own
+    /// instructions (e.g. the OCR text to check).
+    pub async fn read_image(
+        &self,
+        image: &image::DynamicImage,
+        instructions: &str,
+    ) -> Result<String> {
         let guard = self.state.read().await;
         let (target, provider) = match &*guard {
             State::ReadyProvider { target, provider } => (target, provider),
@@ -267,16 +281,12 @@ impl Model {
             State::Failed { error, .. } => anyhow::bail!("LLM failed to load: {error}"),
             State::Empty => anyhow::bail!("no LLM loaded"),
         };
-        let mut out = Vec::with_capacity(images.len());
-        for image in images {
-            let mut png = std::io::Cursor::new(Vec::new());
-            image.write_to(&mut png, image::ImageFormat::Png)?;
-            let reply = provider
-                .read_image(png.get_ref(), instructions, &target.model_id)
-                .await?;
-            out.push(strip_thinking_block(&reply).to_string());
-        }
-        Ok(out)
+        let mut png = std::io::Cursor::new(Vec::new());
+        image.write_to(&mut png, image::ImageFormat::Png)?;
+        let reply = provider
+            .read_image(png.get_ref(), instructions, &target.model_id)
+            .await?;
+        Ok(strip_thinking_block(&reply).to_string())
     }
 }
 

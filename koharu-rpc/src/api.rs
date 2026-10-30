@@ -34,6 +34,7 @@ fn app_api() -> OpenApiRouter<ApiState> {
         .merge(routes::characters::router())
         .merge(routes::typesetting::router())
         .merge(routes::glossary::router())
+        .merge(routes::ocr_fixes::router())
         .merge(routes::library::router())
         .merge(routes::pages::router())
         .merge(routes::projects::router())

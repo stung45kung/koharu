@@ -48,6 +48,7 @@
     "version": "Version: {{version}}",
     "versionUnknown": "Version: Unknown",
     "language": "Language",
+    "ocrCheck": "Check OCR with LLM",
     "customPipeline": "Custom Pipeline",
     "runCustomCurrent": "Run Custom (Current)",
     "runCustomSelected": "Run Custom (Selected: {{count}})",
@@ -275,6 +276,10 @@
   },
   "textBlocks": {
     "ocrBlock": "Read this block's text again (OCR)",
+    "checkOcr": "Check OCR with the LLM (compares the text with the image)",
+    "ocrFixed": "LLM fixed",
+    "ocrRead": "OCR read",
+    "restoreOcr": "Restore the OCR text",
     "emptyPrompt": "Open an image to see text blocks.",
     "title": "Text Blocks ({{count}})",
     "none": "No text blocks yet. Run detection to populate the list.",

@@ -43,3 +43,9 @@ show a SmartScreen warning because the installer is not code-signed: click
 - Local LLMs (LM Studio etc.): replies are length-limited and runaway
   repeated sounds are cut, so a model looping on moans no longer runs on.
 - Undo / redo also covers character and speaker edits.
+- Check OCR with the LLM: turn on "Check OCR with LLM" in the Process menu
+  (or press the check button on a block) and the loaded vision LLM (e.g.
+  Gemma in LM Studio with its vision file) compares the OCR text with the
+  image and fixes misread characters before translation. Fixed blocks show
+  "LLM fixed" with what OCR read, and one click restores it. Answers that
+  rewrite instead of correcting are ignored.

@@ -309,10 +309,6 @@ pub struct TextData {
     pub sprite_transform: Option<Transform>,
     #[serde(default)]
     pub lock_layout_box: bool,
-    /// The OCR text an LLM OCR check replaced (`text` holds the fix). Only
-    /// set when the check changed the text; cleared when OCR runs again.
-    #[serde(default)]
-    pub ocr_original: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

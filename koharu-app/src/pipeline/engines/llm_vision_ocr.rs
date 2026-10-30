@@ -6,7 +6,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 use image::DynamicImage;
-use koharu_core::Op;
+use koharu_core::{NodeDataPatch, NodePatch, Op, TextDataPatch};
 
 use koharu_ml::comic_text_detector::crop_text_block_bbox;
 
@@ -16,7 +16,7 @@ use crate::pipeline::engines::ocr_columns::{
     TextColors, clean_reply, enlarge_small, join_columns, ocr_crops, shrink_for_reading,
 };
 use crate::pipeline::engines::support::{
-    load_source_image, ocr_text_op, segment_mask, target_text_nodes, text_node_to_region,
+    load_source_image, segment_mask, target_text_nodes, text_node_to_region,
 };
 
 const INSTRUCTIONS: &str = "This image is cut from a manga page and shows lettering \
@@ -75,7 +75,19 @@ impl Engine for Model {
         let mut ops = Vec::with_capacity(texts.len());
         for ((node_id, _, _), parts) in texts.iter().zip(&per_block) {
             let text = join_columns(read.by_ref().take(parts.len()).collect());
-            ops.push(ocr_text_op(ctx.page, *node_id, text));
+            ops.push(Op::UpdateNode {
+                page: ctx.page,
+                id: *node_id,
+                patch: NodePatch {
+                    data: Some(NodeDataPatch::Text(TextDataPatch {
+                        text: Some(Some(text)),
+                        ..Default::default()
+                    })),
+                    transform: None,
+                    visible: None,
+                },
+                prev: NodePatch::default(),
+            });
         }
         Ok(ops)
     }

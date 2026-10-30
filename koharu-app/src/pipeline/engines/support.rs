@@ -6,8 +6,8 @@
 use anyhow::{Context, Result};
 use image::{DynamicImage, GenericImageView};
 use koharu_core::{
-    BlobRef, ImageData, ImageRole, MaskData, MaskRole, Node, NodeDataPatch, NodeId, NodeKind,
-    NodePatch, Op, PageId, ReadingOrder, Scene, TextData, TextDataPatch, Transform,
+    BlobRef, ImageData, ImageRole, MaskData, MaskRole, Node, NodeDataPatch, NodeId, NodeKind, Op,
+    PageId, ReadingOrder, Scene, TextData, Transform,
 };
 
 use crate::blobs::BlobStore;
@@ -93,26 +93,6 @@ pub fn target_text_nodes<'a>(
             .filter(|(id, _, _)| ids.contains(id))
             .collect(),
         _ => all,
-    }
-}
-
-/// The op an OCR engine emits for one block: sets the read text and clears
-/// any `ocr_original` left by an earlier LLM OCR check, so its "fixed"
-/// badge goes away once the block is read again.
-pub fn ocr_text_op(page: PageId, id: NodeId, text: String) -> Op {
-    Op::UpdateNode {
-        page,
-        id,
-        patch: NodePatch {
-            data: Some(NodeDataPatch::Text(TextDataPatch {
-                text: Some(Some(text)),
-                ocr_original: Some(None),
-                ..Default::default()
-            })),
-            transform: None,
-            visible: None,
-        },
-        prev: NodePatch::default(),
     }
 }
 
@@ -508,19 +488,6 @@ pub fn sort_manga_reading_order<T>(blocks: &mut [([f32; 4], T)], order: ReadingO
 mod tests {
     use super::*;
     use koharu_core::ReadingOrder;
-
-    #[test]
-    fn ocr_text_op_clears_ocr_original() {
-        let op = ocr_text_op(PageId::new(), NodeId::new(), "t".into());
-        let Op::UpdateNode { patch, .. } = op else {
-            panic!("expected UpdateNode");
-        };
-        let Some(NodeDataPatch::Text(t)) = patch.data else {
-            panic!("expected a text patch");
-        };
-        assert_eq!(t.text, Some(Some("t".to_string())));
-        assert_eq!(t.ocr_original, Some(None));
-    }
 
     #[test]
     fn test_reading_order_sort() {

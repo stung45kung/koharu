@@ -219,6 +219,8 @@ pub struct TextDataPatch {
     pub sprite_transform: Option<Option<Transform>>,
     #[serde(default)]
     pub lock_layout_box: Option<bool>,
+    #[serde(default)]
+    pub ocr_original: Option<Option<String>>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, JsonSchema, ToSchema)]
@@ -696,6 +698,7 @@ fn capture_prev_text(kind: &NodeKind, p: &TextDataPatch) -> TextDataPatch {
         sprite: p.sprite.as_ref().map(|_| data.sprite.clone()),
         sprite_transform: p.sprite_transform.as_ref().map(|_| data.sprite_transform),
         lock_layout_box: p.lock_layout_box.as_ref().map(|_| data.lock_layout_box),
+        ocr_original: p.ocr_original.as_ref().map(|_| data.ocr_original.clone()),
     }
 }
 
@@ -786,6 +789,9 @@ fn apply_text_patch(t: &mut TextData, p: &TextDataPatch) {
     if let Some(v) = p.lock_layout_box {
         t.lock_layout_box = v;
     }
+    if let Some(v) = &p.ocr_original {
+        t.ocr_original = v.clone();
+    }
 }
 
 fn apply_image_patch(i: &mut ImageData, p: &ImageDataPatch) {
@@ -843,6 +849,57 @@ mod tests {
                 name: Some("layer.png".into()),
             }),
         }
+    }
+
+    #[test]
+    fn text_patch_sets_and_inverts_ocr_original() {
+        let mut scene = seed_scene();
+        let page = blank_page();
+        let page_id = page.id;
+        Op::AddPage { page, at: 0 }.apply(&mut scene).unwrap();
+        let node = Node {
+            id: NodeId::new(),
+            transform: Transform::default(),
+            visible: true,
+            kind: NodeKind::Text(crate::scene::TextData {
+                text: Some("x".into()),
+                ..Default::default()
+            }),
+        };
+        let node_id = node.id;
+        Op::AddNode {
+            page: page_id,
+            node,
+            at: 0,
+        }
+        .apply(&mut scene)
+        .unwrap();
+        let mut op = Op::UpdateNode {
+            page: page_id,
+            id: node_id,
+            patch: NodePatch {
+                data: Some(NodeDataPatch::Text(TextDataPatch {
+                    ocr_original: Some(Some("a".into())),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+            prev: NodePatch::default(),
+        };
+        op.apply(&mut scene).unwrap();
+        let ocr_original = |scene: &Scene| match &scene.node(page_id, node_id).unwrap().kind {
+            NodeKind::Text(t) => t.ocr_original.clone(),
+            _ => unreachable!(),
+        };
+        assert_eq!(ocr_original(&scene).as_deref(), Some("a"));
+        op.inverse().apply(&mut scene).unwrap();
+        assert_eq!(ocr_original(&scene), None);
+    }
+
+    #[test]
+    fn text_data_without_ocr_original_deserializes() {
+        let t: crate::scene::TextData = serde_json::from_str("{\"text\":\"x\"}").unwrap();
+        assert_eq!(t.ocr_original, None);
     }
 
     #[test]

@@ -3,14 +3,14 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use koharu_core::{NodeDataPatch, NodePatch, Op, TextDataPatch};
+use koharu_core::Op;
 use koharu_ml::mit48px_ocr::Mit48pxOcr;
 use koharu_ml::types::TextRegion;
 
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
 use crate::pipeline::engines::support::{
-    load_source_image, target_text_nodes, text_node_to_region,
+    load_source_image, ocr_text_op, target_text_nodes, text_node_to_region,
 };
 
 pub struct Model(Mit48pxOcr);
@@ -33,19 +33,7 @@ impl Engine for Model {
         let mut ops = Vec::with_capacity(predictions.len());
         for prediction in predictions {
             if let Some((node_id, _, _)) = texts.get(prediction.block_index) {
-                ops.push(Op::UpdateNode {
-                    page: ctx.page,
-                    id: *node_id,
-                    patch: NodePatch {
-                        data: Some(NodeDataPatch::Text(TextDataPatch {
-                            text: Some(Some(prediction.text)),
-                            ..Default::default()
-                        })),
-                        transform: None,
-                        visible: None,
-                    },
-                    prev: NodePatch::default(),
-                });
+                ops.push(ocr_text_op(ctx.page, *node_id, prediction.text));
             }
         }
         Ok(ops)

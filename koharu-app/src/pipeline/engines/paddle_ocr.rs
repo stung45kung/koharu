@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 use async_trait::async_trait;
-use koharu_core::{NodeDataPatch, NodePatch, Op, TextDataPatch};
+use koharu_core::Op;
 use koharu_llm::paddleocr_vl::{PaddleOcrVl, PaddleOcrVlTask};
 
 use crate::app::shared_llama_backend;
@@ -18,7 +18,7 @@ use crate::pipeline::engines::ocr_columns::{
     TextColors, join_columns, ocr_crops, shrink_for_reading,
 };
 use crate::pipeline::engines::support::{
-    load_source_image, segment_mask, target_text_nodes, text_node_to_region,
+    load_source_image, ocr_text_op, segment_mask, target_text_nodes, text_node_to_region,
 };
 
 const MAX_NEW_TOKENS: usize = 256;
@@ -71,19 +71,7 @@ impl Engine for Model {
 
         let mut ops = Vec::with_capacity(texts.len());
         for ((node_id, _, _), out) in texts.iter().zip(outputs) {
-            ops.push(Op::UpdateNode {
-                page: ctx.page,
-                id: *node_id,
-                patch: NodePatch {
-                    data: Some(NodeDataPatch::Text(TextDataPatch {
-                        text: Some(Some(out)),
-                        ..Default::default()
-                    })),
-                    transform: None,
-                    visible: None,
-                },
-                prev: NodePatch::default(),
-            });
+            ops.push(ocr_text_op(ctx.page, *node_id, out));
         }
         Ok(ops)
     }

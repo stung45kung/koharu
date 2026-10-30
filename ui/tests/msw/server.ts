@@ -16,5 +16,4 @@ export const server = setupServer(
   ),
   http.get('/api/v1/typesetting', () => HttpResponse.json({})),
   http.get('/api/v1/glossary', () => HttpResponse.json({ entries: [] })),
-  http.get('/api/v1/ocr-fixes', () => HttpResponse.json({ originals: {} })),
 )

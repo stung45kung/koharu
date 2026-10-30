@@ -13,7 +13,6 @@
 //!   `.khrproj/characters.toml` — character profiles + speaker map (optional)
 //!   `.khrproj/typesetting.toml` — project default text size (optional)
 //!   `.khrproj/glossary.toml`    — fixed term translations (optional)
-//!   `.khrproj/ocr_fixes.toml`   — OCR text replaced by the LLM OCR check (optional)
 //!   `.khrproj/blobs/ab/cdef…`  — content-addressed blobs
 //!   `.khrproj/.lock`           — fs4 exclusive lock (session lifetime)
 
@@ -26,7 +25,7 @@ use atomicwrites::{AtomicFile, OverwriteBehavior};
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::Utc;
 use fs4::FileExt;
-use koharu_core::{CharacterBook, Glossary, OcrFixes, Scene, TypesettingDefaults, op::Op};
+use koharu_core::{CharacterBook, Glossary, Scene, TypesettingDefaults, op::Op};
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 
@@ -34,7 +33,6 @@ use crate::blobs::BlobStore;
 use crate::characters;
 use crate::glossary;
 use crate::history::{self, History};
-use crate::ocr_fixes;
 use crate::typesetting;
 
 const SCENE_FILE: &str = "scene.bin";
@@ -63,8 +61,6 @@ pub struct ProjectSession {
     typesetting: RwLock<TypesettingDefaults>,
     /// Project glossary, mirrored to `glossary.toml`.
     glossary: RwLock<Glossary>,
-    /// OCR text the LLM OCR check replaced, mirrored to `ocr_fixes.toml`.
-    ocr_fixes: RwLock<OcrFixes>,
     /// Interleaving of scene ops and character-book edits, so one Ctrl+Z
     /// undoes whichever happened last.
     timeline: Mutex<Timeline>,
@@ -188,7 +184,6 @@ impl ProjectSession {
         let characters = RwLock::new(characters::load(&dir));
         let typesetting = RwLock::new(typesetting::load(&dir));
         let glossary = RwLock::new(glossary::load(&dir));
-        let ocr_fixes = RwLock::new(ocr_fixes::load(&dir));
 
         Ok(Arc::new(Self {
             dir,
@@ -198,7 +193,6 @@ impl ProjectSession {
             characters,
             typesetting,
             glossary,
-            ocr_fixes,
             timeline: Mutex::new(Timeline::default()),
             _lock: lock,
         }))
@@ -337,25 +331,6 @@ impl ProjectSession {
         glossary::save(&self.dir, &glossary)?;
         *guard = glossary;
         Ok(())
-    }
-
-    // --- OCR fixes ----------------------------------------------------------
-
-    pub fn ocr_fixes(&self) -> OcrFixes {
-        self.ocr_fixes.read().clone()
-    }
-
-    /// Change the OCR fixes and persist them when they changed. The
-    /// in-memory copy only changes if the disk write succeeds.
-    pub fn update_ocr_fixes(&self, f: impl FnOnce(&mut OcrFixes)) -> Result<OcrFixes> {
-        let mut guard = self.ocr_fixes.write();
-        let mut next = guard.clone();
-        f(&mut next);
-        if next != *guard {
-            ocr_fixes::save(&self.dir, &next)?;
-            *guard = next.clone();
-        }
-        Ok(next)
     }
 
     // --- compaction --------------------------------------------------------
@@ -633,20 +608,6 @@ mod tests {
         let session = ProjectSession::open(&path).unwrap();
         let book = session.characters();
         assert_eq!(book.speaker_of(node).map(|c| c.id), Some(id));
-    }
-
-    #[test]
-    fn ocr_fixes_persist_across_reopen() {
-        let (_tmp, path) = tmp_dir();
-        let node = NodeId::new();
-        {
-            let session = ProjectSession::create(&path, "fixes").unwrap();
-            session
-                .update_ocr_fixes(|f| f.record(node, "あリがとう".into()))
-                .unwrap();
-        }
-        let session = ProjectSession::open(&path).unwrap();
-        assert_eq!(session.ocr_fixes().original(node), Some("あリがとう"));
     }
 
     #[test]

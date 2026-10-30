@@ -31,10 +31,6 @@ pub enum Artifact {
     OcrText,
     /// Every `Text` node has `font_prediction` set.
     FontPredictions,
-    /// The `ocr-check` step compared the OCR text with the image. Only
-    /// orders that step before speaker guessing and translation; never
-    /// blocks anything.
-    OcrChecked,
     /// Speakers were guessed for the page's text nodes (stored in the
     /// project's character book, not the scene). Only orders the
     /// `speaker-guess` step before translation; never blocks anything.
@@ -64,7 +60,7 @@ impl Artifact {
                 t.text.as_ref().is_some_and(|s| !s.trim().is_empty())
             }),
             Artifact::FontPredictions => every_text(page, |t| t.font_prediction.is_some()),
-            Artifact::OcrChecked | Artifact::Speakers => true,
+            Artifact::Speakers => true,
             Artifact::Translations => every_text(page, |t| {
                 // A text node with no OCR text needs no translation either.
                 let has_ocr = t.text.as_ref().is_some_and(|s| !s.trim().is_empty());

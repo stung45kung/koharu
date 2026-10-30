@@ -5,7 +5,6 @@ import { EventStreamContentType, fetchEventSource } from '@microsoft/fetch-event
 import { getGetCurrentLlmQueryKey, getGetSceneJsonQueryKey } from '@/lib/api/default/default'
 import type { AppEvent } from '@/lib/api/schemas'
 import { charactersQueryKey } from '@/lib/characters'
-import { ocrFixesQueryKey } from '@/lib/ocrFixes'
 import { queryClient } from '@/lib/queryClient'
 import { useDownloadsStore } from '@/lib/stores/downloadsStore'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
@@ -169,8 +168,6 @@ function dispatch(event: AppEvent): void {
       invalidateScene()
       // The speaker-guess step writes the character book outside the scene.
       void queryClient.invalidateQueries({ queryKey: charactersQueryKey })
-      // The ocr-check step (and OCR) change the OCR fixes outside the scene.
-      void queryClient.invalidateQueries({ queryKey: ocrFixesQueryKey })
       return
 
     case 'downloadProgress':

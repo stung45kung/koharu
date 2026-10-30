@@ -52,11 +52,7 @@ jobs:
           eval "$(dbus-launch --sh-syntax)"
           echo -n "" | gnome-keyring-daemon --unlock --components=secrets &>/dev/null &
           export $(echo -n "" | gnome-keyring-daemon --start --components=secrets 2>/dev/null)
-          set -o pipefail
-          cargo test --workspace --tests 2>&1 | tee /tmp/test.log || {
-            grep -E -B2 -A12 "panicked|^error|FAILED|failures:" /tmp/test.log | head -150 | sed 's/^/::error::/'
-            exit 1
-          }
+          cargo test --workspace --tests
 
   ui:
     name: UI

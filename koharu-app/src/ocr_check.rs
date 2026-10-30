@@ -69,7 +69,28 @@ pub fn accept_correction(original: &str, reply: &str) -> Option<String> {
     if levenshtein(original, reply) * 2 > longer {
         return None;
     }
+    // Latin letters or markdown asterisks the lettering did not have are a
+    // preamble ("Here is the text:"), a note or bold markup, not a fix. The
+    // relative rules above let those through on long blocks.
+    let count = |s: &str, f: fn(&char) -> bool| s.chars().filter(f).count();
+    let latin = |c: &char| c.is_ascii_alphabetic();
+    let star = |c: &char| *c == '*';
+    if count(reply, latin) > count(original, latin) || count(reply, star) > count(original, star) {
+        return None;
+    }
     Some(reply.to_string())
+}
+
+/// What the check changes: the corrected text, or `None` to leave the block
+/// as it is. `cleaned_original` is the OCR text put through the same reply
+/// cleaning as `reply` (brackets, quotes and line breaks dropped), so an
+/// echo of a bracketed or multi-line block counts as "no change" instead of
+/// a fix that deletes its brackets.
+pub fn decide(original: &str, cleaned_original: &str, reply: &str) -> Option<String> {
+    if reply.trim() == cleaned_original.trim() {
+        return None;
+    }
+    accept_correction(original, reply)
 }
 
 /// Edit distance in `char`s.
@@ -149,6 +170,36 @@ mod tests {
         assert_eq!(
             accept_correction("はい", "The text in the image reads: はい"),
             None
+        );
+    }
+
+    #[test]
+    fn rejects_preamble_on_a_long_block() {
+        let block = "今日はみんなで海に行く約束をしてたのにまさか雨が降るなんて思わなかったよ";
+        assert!(block.chars().count() >= 30);
+        let reply = format!("Here is the corrected text:{block}");
+        assert_eq!(accept_correction(block, &reply), None);
+    }
+
+    #[test]
+    fn rejects_markdown_bold() {
+        assert_eq!(accept_correction("ありがとう", "**ありがとう**"), None);
+    }
+
+    #[test]
+    fn keeps_latin_the_lettering_has() {
+        assert_eq!(
+            accept_correction("OKだよ!", "OKだよ！").as_deref(),
+            Some("OKだよ！")
+        );
+    }
+
+    #[test]
+    fn echo_of_a_bracketed_block_is_no_change() {
+        assert_eq!(decide("「ただいま」", "ただいま", "ただいま"), None);
+        assert_eq!(
+            decide("「ただいま」", "ただいま", "ただいよ").as_deref(),
+            Some("ただいよ")
         );
     }
 

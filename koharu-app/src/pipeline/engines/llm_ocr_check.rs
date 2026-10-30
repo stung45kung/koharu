@@ -6,7 +6,7 @@
 //! The OCR text each fix replaced goes to the project's `OcrFixes`
 //! (`ocr_fixes.toml`), not the scene.
 //!
-//! It never fails the page: with no LLM it is skipped, and a reading error
+//! It does not fail the page over the model: with no LLM it is skipped, and a reading error
 //! (e.g. a model without vision) is only logged, keeping the fixes made so
 //! far, so translation/inpaint/render still run.
 
@@ -17,7 +17,7 @@ use async_trait::async_trait;
 use koharu_core::Op;
 use koharu_ml::comic_text_detector::crop_text_block_bbox;
 
-use crate::ocr_check::{accept_correction, check_instructions, correction_op, hint_names};
+use crate::ocr_check::{check_instructions, correction_op, decide, hint_names};
 use crate::pipeline::artifacts::Artifact;
 use crate::pipeline::engine::{Engine, EngineCtx, EngineInfo};
 use crate::pipeline::engines::ocr_columns::{clean_reply, enlarge_small, shrink_for_reading};
@@ -68,13 +68,16 @@ impl Engine for Model {
                     break;
                 }
             };
-            match accept_correction(ocr_text, &reply) {
+            let cleaned = clean_reply(ocr_text);
+            match decide(ocr_text, &cleaned, &reply) {
                 Some(corrected) => {
                     if let Some(op) = correction_op(ctx.page, node_id, ocr_text, &corrected) {
                         ops.push(op);
                         fixed.push((node_id, ocr_text.to_string()));
                     }
                 }
+                // The model confirmed the OCR text.
+                None if reply.trim() == cleaned.trim() => {}
                 None => tracing::warn!(
                     page = %ctx.page,
                     block = %node_id,

@@ -10,7 +10,7 @@ use koharu_core::OcrFixes;
 pub const OCR_FIXES_FILE: &str = "ocr_fixes.toml";
 
 /// Missing file → no fixes. An unparsable file is moved aside (never
-/// silently overwritten) and an no fixes is used.
+/// silently overwritten) and no fixes are used.
 pub fn load(dir: &Utf8Path) -> OcrFixes {
     let path = dir.join(OCR_FIXES_FILE);
     let text = match std::fs::read_to_string(path.as_std_path()) {

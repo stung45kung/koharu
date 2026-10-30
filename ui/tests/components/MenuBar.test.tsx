@@ -6,8 +6,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MenuBar } from '@/components/MenuBar'
 import { getGetConfigQueryKey, getGetSceneJsonQueryKey } from '@/lib/api/default/default'
 import { queryClient } from '@/lib/queryClient'
-import { usePreferencesStore } from '@/lib/stores/preferencesStore'
-import { useSelectionStore } from '@/lib/stores/selectionStore'
 
 import { renderWithQuery } from '../helpers'
 import { server } from '../msw/server'
@@ -79,55 +77,5 @@ describe('MenuBar', () => {
     await userEvent.click(screen.getByTestId('menu-file-trigger'))
     const close = await screen.findByTestId('menu-file-close-project')
     expect(close).toHaveAttribute('data-disabled')
-  })
-
-  it('adds the ocr-check step after OCR when the switch is on', async () => {
-    const pipelineRequests: any[] = []
-    server.use(
-      http.get('/api/v1/config', () =>
-        HttpResponse.json({ pipeline: { ocr: 'manga-ocr', translator: 'llm' } }),
-      ),
-      http.post('/api/v1/pipelines', async ({ request }) => {
-        pipelineRequests.push(await request.json())
-        return HttpResponse.json({ operationId: 'op-1' })
-      }),
-    )
-    usePreferencesStore.setState({ ocrCheck: false })
-    useSelectionStore.getState().setPage('p1')
-
-    renderWithQuery(<MenuBar />)
-    await userEvent.click(screen.getByTestId('menu-process-trigger'))
-    await userEvent.click(await screen.findByTestId('menu-ocr-check'))
-    expect(usePreferencesStore.getState().ocrCheck).toBe(true)
-    await userEvent.click(await screen.findByTestId('menu-process-current'))
-
-    await waitFor(() => expect(pipelineRequests).toHaveLength(1))
-    const steps: string[] = pipelineRequests[0].steps
-    expect(steps.slice(steps.indexOf('manga-ocr'), steps.indexOf('manga-ocr') + 2)).toEqual([
-      'manga-ocr',
-      'ocr-check',
-    ])
-  })
-
-  it('leaves the ocr-check step out when the switch is off', async () => {
-    const pipelineRequests: any[] = []
-    server.use(
-      http.get('/api/v1/config', () =>
-        HttpResponse.json({ pipeline: { ocr: 'manga-ocr', translator: 'llm' } }),
-      ),
-      http.post('/api/v1/pipelines', async ({ request }) => {
-        pipelineRequests.push(await request.json())
-        return HttpResponse.json({ operationId: 'op-1' })
-      }),
-    )
-    usePreferencesStore.setState({ ocrCheck: false })
-    useSelectionStore.getState().setPage('p1')
-
-    renderWithQuery(<MenuBar />)
-    await userEvent.click(screen.getByTestId('menu-process-trigger'))
-    await userEvent.click(await screen.findByTestId('menu-process-current'))
-
-    await waitFor(() => expect(pipelineRequests).toHaveLength(1))
-    expect(pipelineRequests[0].steps).not.toContain('ocr-check')
   })
 })

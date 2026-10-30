@@ -8,7 +8,7 @@
 //! columns are read right to left. (Cutting long columns into chunks was
 //! tried and read worse.)
 
-use image::{DynamicImage, GrayImage, Luma, RgbImage, imageops::FilterType};
+use image::{DynamicImage, GrayImage, Luma, RgbImage};
 use koharu_ml::comic_text_detector::crop_text_block_bbox;
 use koharu_ml::types::{TextDirection, TextRegion};
 
@@ -362,38 +362,6 @@ pub fn join_columns(parts: Vec<String>) -> String {
     parts.concat()
 }
 
-/// Crops smaller than this (px, shorter side) are enlarged before sending.
-pub const MIN_SIDE: u32 = 64;
-
-/// Enlarge a crop whose shorter side is under [`MIN_SIDE`] for LLM reading.
-pub fn enlarge_small(crop: DynamicImage) -> DynamicImage {
-    let short = crop.width().min(crop.height()).max(1);
-    if short >= MIN_SIDE {
-        return crop;
-    }
-    let scale = (MIN_SIDE as f32 / short as f32).ceil() as u32;
-    crop.resize(
-        crop.width() * scale,
-        crop.height() * scale,
-        FilterType::Lanczos3,
-    )
-}
-
-/// The text of a reply: no code fences, wrapping quotes or line breaks
-/// (columns are joined without spaces).
-pub fn clean_reply(reply: &str) -> String {
-    let text = reply.trim().trim_matches('`').trim();
-    let text = text
-        .strip_prefix('「')
-        .and_then(|t| t.strip_suffix('」'))
-        .unwrap_or(text);
-    let text = text
-        .strip_prefix('"')
-        .and_then(|t| t.strip_suffix('"'))
-        .unwrap_or(text);
-    text.lines().map(str::trim).collect::<Vec<_>>().concat()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,15 +562,5 @@ mod tests {
         let columns = vertical_columns(&mask, &block(10.0, 10.0, 90.0, 340.0));
         assert_eq!(columns.len(), 2);
         assert_eq!((columns[1].top, columns[1].bottom), (20, 20 + 2 * 34 + 30));
-    }
-
-    #[test]
-    fn replies_are_reduced_to_the_text() {
-        assert_eq!(clean_reply("「へへ…」\n"), "へへ…");
-        assert_eq!(
-            clean_reply("```\nウチは昼、\n持ち帰りの\n```"),
-            "ウチは昼、持ち帰りの"
-        );
-        assert_eq!(clean_reply("  似合ってるでぇ "), "似合ってるでぇ");
     }
 }

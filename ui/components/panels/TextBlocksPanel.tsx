@@ -8,9 +8,7 @@ import {
   Languages,
   LoaderCircleIcon,
   ScanIcon,
-  ScanSearchIcon,
   Trash2Icon,
-  Undo2Icon,
   UsersIcon,
   WandSparklesIcon,
 } from 'lucide-react'
@@ -61,7 +59,6 @@ import {
   reorderPageTextNodes,
 } from '@/lib/io/scene'
 import { ocrBlocks } from '@/lib/ocrBlocks'
-import { checkOcrBlocks, fixedFrom, forgetOcrFixes, useOcrFixes } from '@/lib/ocrFixes'
 import { ops } from '@/lib/ops'
 import { useEditorUiStore } from '@/lib/stores/editorUiStore'
 import { useJobsStore } from '@/lib/stores/jobsStore'
@@ -93,7 +90,6 @@ export function TextBlocksPanel() {
   const readingOrder = useEditorUiStore((s) => s.readingOrder)
   const setReadingOrder = useEditorUiStore((s) => s.setReadingOrder)
   const characterBook = useCharacters()
-  const ocrFixes = useOcrFixes()
   const assignSpeaker = useAssignSpeaker()
   const guess = useGuessSpeakers()
   const confirm = useConfirmSpeakers()
@@ -361,23 +357,6 @@ export function TextBlocksPanel() {
                       useEditorUiStore.getState().showError(String(err)),
                     )
                   }}
-                  onCheckOcr={() => {
-                    if (!page) return
-                    checkOcrBlocks(page.id, [node.id]).catch((err) =>
-                      useEditorUiStore.getState().showError(String(err)),
-                    )
-                  }}
-                  ocrFixedFrom={fixedFrom(ocrFixes, node.id, node.data.text)}
-                  onRestoreOcr={(original) => {
-                    void (async () => {
-                      try {
-                        await patchText(node.id, { text: original })
-                        await forgetOcrFixes([node.id])
-                      } catch (err) {
-                        useEditorUiStore.getState().showError(String(err))
-                      }
-                    })()
-                  }}
                   onRevise={(instruction) => void generate(node.id, instruction)}
                   processing={isProcessing}
                   llmReady={llmReady}
@@ -448,10 +427,6 @@ type BlockCardProps = {
   onDelete: () => void
   onGenerate: () => void
   onOcr: () => void
-  onCheckOcr: () => void
-  /** OCR text the LLM check replaced, or `null` when not fixed. */
-  ocrFixedFrom: string | null
-  onRestoreOcr: (original: string) => void
   onRevise: (instruction: string) => void
   processing: boolean
   llmReady: boolean
@@ -468,9 +443,6 @@ function BlockCard({
   onDelete,
   onGenerate,
   onOcr,
-  onCheckOcr,
-  ocrFixedFrom,
-  onRestoreOcr,
   onRevise,
   processing,
   llmReady,
@@ -530,15 +502,6 @@ function BlockCard({
             >
               {t('textBlocks.translationBadge')}
             </span>
-            {ocrFixedFrom !== null && (
-              <span
-                data-testid={`textblock-ocr-fixed-${index}`}
-                className='shrink-0 rounded-sm border border-dashed border-amber-500 px-1 py-0.5 text-[9px] font-medium text-amber-600 dark:text-amber-300'
-                title={`${t('textBlocks.ocrRead')}: ${ocrFixedFrom}`}
-              >
-                {t('textBlocks.ocrFixed')}
-              </span>
-            )}
             {speakerName && (
               <span
                 data-testid={`textblock-speaker-chip-${index}`}
@@ -566,31 +529,9 @@ function BlockCard({
         <AccordionContent className='px-2 pt-1.5 pb-2 shadow-[inset_0_1px_0_0_var(--color-border)]'>
           <div className='space-y-1.5'>
             <div className='flex flex-col gap-0.5'>
-              <div className='flex items-center justify-between'>
-                <span className='text-[10px] text-muted-foreground uppercase'>
-                  {t('textBlocks.ocrLabel')}
-                </span>
-                {ocrFixedFrom !== null && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        data-testid={`textblock-ocr-revert-${index}`}
-                        aria-label={t('textBlocks.restoreOcr')}
-                        variant='ghost'
-                        size='icon-xs'
-                        disabled={processing}
-                        onClick={() => onRestoreOcr(ocrFixedFrom)}
-                        className='size-5'
-                      >
-                        <Undo2Icon className='size-3' />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side='left' sideOffset={4}>
-                      {`${t('textBlocks.restoreOcr')}: ${ocrFixedFrom}`}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-              </div>
+              <span className='text-[10px] text-muted-foreground uppercase'>
+                {t('textBlocks.ocrLabel')}
+              </span>
               <DraftTextarea
                 data-testid={`textblock-ocr-${index}`}
                 value={data.text ?? ''}
@@ -640,24 +581,6 @@ function BlockCard({
                     </TooltipTrigger>
                     <TooltipContent side='left' sideOffset={4}>
                       {t('textBlocks.ocrBlock')}
-                    </TooltipContent>
-                  </Tooltip>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        data-testid={`textblock-ocr-check-${index}`}
-                        aria-label={t('textBlocks.checkOcr')}
-                        variant='ghost'
-                        size='icon-xs'
-                        disabled={!llmReady || processing || !hasOcr}
-                        onClick={onCheckOcr}
-                        className='size-5'
-                      >
-                        <ScanSearchIcon className='size-3' />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side='left' sideOffset={4}>
-                      {t('textBlocks.checkOcr')}
                     </TooltipContent>
                   </Tooltip>
                   <Tooltip>

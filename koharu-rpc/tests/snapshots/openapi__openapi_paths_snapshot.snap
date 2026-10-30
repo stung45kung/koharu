@@ -203,18 +203,6 @@ expression: paths
         ],
     ),
     (
-        "/ocr-fixes",
-        [
-            "get",
-        ],
-    ),
-    (
-        "/ocr-fixes/forget",
-        [
-            "post",
-        ],
-    ),
-    (
         "/operations",
         [
             "get",

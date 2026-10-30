@@ -44,9 +44,6 @@ type PreferencesState = {
     renderer: boolean
   }
   setCustomPipeline: (pipeline: Partial<PreferencesState['customPipeline']>) => void
-  /** Run the LLM OCR check (`ocr-check`) after OCR in Process and Custom runs. */
-  ocrCheck: boolean
-  setOcrCheck: (on: boolean) => void
   resetPreferences: () => void
 }
 
@@ -78,7 +75,6 @@ const initialPreferences = {
     inpainter: true,
     renderer: true,
   },
-  ocrCheck: false,
 }
 
 export const usePreferencesStore = create<PreferencesState>()(
@@ -122,7 +118,6 @@ export const usePreferencesStore = create<PreferencesState>()(
             ...pipeline,
           },
         })),
-      setOcrCheck: (on) => set({ ocrCheck: on }),
       resetPreferences: () => set({ ...initialPreferences }),
     }),
     {
@@ -176,7 +171,6 @@ export const usePreferencesStore = create<PreferencesState>()(
         codexImageModel: state.codexImageModel,
         shortcuts: state.shortcuts,
         customPipeline: state.customPipeline,
-        ocrCheck: state.ocrCheck,
       }),
     },
   ),

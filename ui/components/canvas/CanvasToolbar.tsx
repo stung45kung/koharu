@@ -416,7 +416,10 @@ function LlmStatusPopover() {
               onChange={(e) => setCustomSystemPrompt(e.target.value || undefined)}
               placeholder={t('llm.systemPromptPlaceholder')}
               rows={5}
-              className='min-h-0 resize-y px-2 py-1.5 text-xs leading-snug md:text-xs'
+              // Fixed height that scrolls: the Textarea default
+              // (`field-sizing-content`) grows with the text, so a long
+              // prompt ran off the window and could not be scrolled.
+              className='field-sizing-fixed max-h-[40vh] min-h-0 resize-y overflow-y-auto px-2 py-1.5 text-xs leading-snug md:text-xs'
             />
           </div>
         </div>

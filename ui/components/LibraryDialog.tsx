@@ -8,7 +8,7 @@ import {
   Trash2Icon,
   UploadIcon,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
@@ -25,6 +25,7 @@ import {
   useLibrary,
   useSaveToLibrary,
 } from '@/lib/library'
+import { pickClick, pickState, setMany } from '@/lib/pickSet'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -55,11 +56,37 @@ const storeSeries = (s: string) => {
   }
 }
 
-function toggle(set: Set<string>, id: string): Set<string> {
-  const next = new Set(set)
-  if (next.has(id)) next.delete(id)
-  else next.add(id)
-  return next
+/** Tick box for a whole list or series: shows "some" as a dash. */
+function PickAll({
+  state,
+  label,
+  onChange,
+  testId,
+  className,
+}: {
+  state: 'all' | 'some' | 'none'
+  label: string
+  onChange: (on: boolean) => void
+  testId: string
+  className?: string
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (ref.current) ref.current.indeterminate = state === 'some'
+  }, [state])
+  return (
+    <label className={cn('flex cursor-pointer items-center gap-2', className)}>
+      <input
+        ref={ref}
+        type='checkbox'
+        data-testid={testId}
+        className='size-3.5 shrink-0 accent-primary'
+        checked={state === 'all'}
+        onChange={(e) => onChange(e.target.checked)}
+      />
+      <span className='min-w-0 truncate'>{label}</span>
+    </label>
+  )
 }
 
 /**
@@ -82,6 +109,9 @@ export function LibraryDialog({ open, onOpenChange }: Props) {
   const [search, setSearch] = useState('')
   const [pickProject, setPickProject] = useState<Set<string>>(new Set())
   const [pickLibrary, setPickLibrary] = useState<Set<string>>(new Set())
+  // Last item clicked on each side, for Shift+click ranges.
+  const [anchorProject, setAnchorProject] = useState<string | null>(null)
+  const [anchorLibrary, setAnchorLibrary] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -96,6 +126,8 @@ export function LibraryDialog({ open, onOpenChange }: Props) {
   useEffect(() => {
     setPickProject(new Set())
     setPickLibrary(new Set())
+    setAnchorProject(null)
+    setAnchorLibrary(null)
     setConfirmDelete(false)
   }, [tab, open])
 
@@ -148,6 +180,22 @@ export function LibraryDialog({ open, onOpenChange }: Props) {
       (i) => !search.trim() || `${i.label} ${i.sub}`.toLowerCase().includes(norm(search)),
     )
     .sort((a, b) => a.series.localeCompare(b.series) || a.label.localeCompare(b.label))
+  const projectIds = projectItems.map((i) => i.id)
+  // Only the library items shown (series filter + search) are ticked by
+  // "select all".
+  const libraryKeys = libraryItems.map((i) => i.key)
+  const seriesKeys = (name: string) =>
+    libraryItems.filter((i) => i.series === name).map((i) => i.key)
+
+  const clickProject = (id: string, shift: boolean) => {
+    setPickProject((s) => pickClick(s, projectIds, id, shift, anchorProject))
+    setAnchorProject(id)
+  }
+  const clickLibrary = (key: string, shift: boolean) => {
+    setPickLibrary((s) => pickClick(s, libraryKeys, key, shift, anchorLibrary))
+    setAnchorLibrary(key)
+  }
+
   const inProject = (name: string) =>
     tab === 'characters'
       ? book.characters.some((c) => norm(c.name) === norm(name))
@@ -239,13 +287,31 @@ export function LibraryDialog({ open, onOpenChange }: Props) {
               {projectItems.length === 0 && (
                 <p className='p-2 text-xs text-muted-foreground'>{t('library.projectEmpty')}</p>
               )}
+              {projectItems.length > 0 && (
+                <PickAll
+                  testId='library-project-all'
+                  state={pickState(pickProject, projectIds)}
+                  label={t('library.selectAll', { count: projectIds.length })}
+                  onChange={(on) => setPickProject((s) => setMany(s, projectIds, on))}
+                  className='border-b border-border px-2 pt-1 pb-1.5 text-xs font-medium'
+                />
+              )}
               {projectItems.map((i) => (
-                <label key={i.id} className={rowClass}>
+                <label
+                  key={i.id}
+                  className={rowClass}
+                  data-testid='library-project-row'
+                  onClick={(e) => {
+                    // One handler for the box and the text, with Shift.
+                    e.preventDefault()
+                    clickProject(i.id, e.shiftKey)
+                  }}
+                >
                   <input
                     type='checkbox'
+                    readOnly
                     className='size-3.5 shrink-0 accent-primary'
                     checked={pickProject.has(i.id)}
-                    onChange={() => setPickProject((s) => toggle(s, i.id))}
                   />
                   <span className='min-w-0 flex-1 truncate'>
                     {i.label}
@@ -341,19 +407,41 @@ export function LibraryDialog({ open, onOpenChange }: Props) {
               {!library.isLoading && libraryItems.length === 0 && (
                 <p className='p-2 text-xs text-muted-foreground'>{t('library.empty')}</p>
               )}
+              {libraryItems.length > 0 && (
+                <PickAll
+                  testId='library-all'
+                  state={pickState(pickLibrary, libraryKeys)}
+                  label={t('library.selectAllShown', { count: libraryKeys.length })}
+                  onChange={(on) => setPickLibrary((s) => setMany(s, libraryKeys, on))}
+                  className='border-b border-border px-2 pt-1 pb-1.5 text-xs font-medium'
+                />
+              )}
               {libraryItems.map((i, idx) => (
                 <div key={i.key}>
                   {(idx === 0 || libraryItems[idx - 1].series !== i.series) && (
-                    <div className='px-2 pt-1.5 pb-0.5 text-[10px] font-semibold text-muted-foreground uppercase'>
-                      {i.series || t('library.noSeries')}
-                    </div>
+                    <PickAll
+                      testId={`library-series-all-${i.series}`}
+                      state={pickState(pickLibrary, seriesKeys(i.series))}
+                      label={i.series || t('library.noSeries')}
+                      onChange={(on) =>
+                        setPickLibrary((s) => setMany(s, seriesKeys(i.series), on))
+                      }
+                      className='px-2 pt-1.5 pb-0.5 text-[10px] font-semibold text-muted-foreground uppercase'
+                    />
                   )}
-                  <label className={rowClass}>
+                  <label
+                    className={rowClass}
+                    data-testid='library-row'
+                    onClick={(e) => {
+                      e.preventDefault()
+                      clickLibrary(i.key, e.shiftKey)
+                    }}
+                  >
                     <input
                       type='checkbox'
+                      readOnly
                       className='size-3.5 shrink-0 accent-primary'
                       checked={pickLibrary.has(i.key)}
-                      onChange={() => setPickLibrary((s) => toggle(s, i.key))}
                     />
                     <span className='min-w-0 flex-1 truncate'>
                       {i.label}

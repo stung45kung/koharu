@@ -45,3 +45,6 @@ show a SmartScreen warning because the installer is not code-signed: click
 - Undo / redo also covers character and speaker edits.
 - The LLM system prompt box (next to the model picker) keeps its size and
   scrolls, instead of growing past the window with a long prompt.
+- Library: "Select all" on both lists (the library side picks only what the
+  series filter / search shows), a tick box per series, and Shift+click to
+  tick a range, so moving many glossary terms no longer means ticking each.

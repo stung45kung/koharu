@@ -582,7 +582,7 @@
   "library": {
     "button": "Library",
     "title": "Library",
-    "description": "Characters and glossary terms kept for all projects, grouped by series. Tick items on the left and press → to save them; tick items on the right and press ← to add them to this project.",
+    "description": "Characters and glossary terms kept for all projects, grouped by series. Tick items on the left and press → to save them; tick items on the right and press ← to add them to this project. Shift+click ticks a range.",
     "tab": {
       "characters": "Characters",
       "terms": "Glossary"
@@ -596,6 +596,8 @@
     "allSeries": "All series",
     "noSeries": "(no series)",
     "search": "Search",
+    "selectAll": "Select all ({{count}})",
+    "selectAllShown": "Select all shown ({{count}})",
     "loading": "Loading…",
     "empty": "Nothing here yet.",
     "badgeInLibrary": "in library",

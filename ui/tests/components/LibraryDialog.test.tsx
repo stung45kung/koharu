@@ -52,11 +52,13 @@ describe('LibraryDialog picking', () => {
 
   it('Shift+click ticks a range of project terms', async () => {
     await openTerms()
+    // One user-event instance, so the held Shift reaches the click.
+    const user = userEvent.setup()
     const rows = await screen.findAllByTestId('library-project-row')
-    await userEvent.click(rows[0])
-    await userEvent.keyboard('{Shift>}')
-    await userEvent.click(rows[2])
-    await userEvent.keyboard('{/Shift}')
+    await user.click(rows[0])
+    await user.keyboard('{Shift>}')
+    await user.click(rows[2])
+    await user.keyboard('{/Shift}')
     const ticked = rows.map((r) => (within(r).getByRole('checkbox') as HTMLInputElement).checked)
     expect(ticked).toEqual([true, true, true, false])
   })
